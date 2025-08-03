@@ -4,7 +4,6 @@ use poise::serenity_prelude::CreateEmbed;
 use rand::Rng;
 use sqlx::Row;
 
-// Fixed macro - returns Ok(()) instead of trying to use ?
 macro_rules! embed_reply {
     ($ctx:expr, $title:expr, $desc:expr) => {
         {
@@ -16,7 +15,6 @@ macro_rules! embed_reply {
     };
 }
 
-// Fixed permission check - check in guild context
 async fn is_mod(ctx: &poise::Context<'_, Data, Error>) -> bool {
     if let Some(_guild_id) = ctx.guild_id() {
         if let Some(member) = ctx.author_member().await.as_ref() {
@@ -90,7 +88,6 @@ pub async fn handle_bitflip(
     
     let user_id = ctx.author().id.to_string();
     
-    // Check if user has enough bits
     let current_bits: i64 = sqlx::query("SELECT bits FROM users WHERE id = ?")
         .bind(&user_id)
         .fetch_one(&ctx.data().db)
@@ -108,7 +105,7 @@ pub async fn handle_bitflip(
     let flip_side = if flip_result { "heads" } else { "tails" };
     let won = bet_side_lower == flip_side;
     
-    let delta = if won { bet_amount } else { -bet_amount }; // 2x payout (double your bet)
+    let delta = if won { bet_amount } else { -bet_amount };
     
     sqlx::query("UPDATE users SET bits = bits + ? WHERE id = ?")
         .bind(delta)
@@ -154,7 +151,6 @@ pub async fn handle_dice(
     
     let user_id = ctx.author().id.to_string();
     
-    // Check if user has enough bits
     let current_bits: i64 = sqlx::query("SELECT bits FROM users WHERE id = ?")
         .bind(&user_id)
         .fetch_one(&ctx.data().db)
@@ -171,7 +167,7 @@ pub async fn handle_dice(
     let roll = rand::thread_rng().gen_range(1..=6);
     let won = roll == bet_side;
     
-    let delta = if won { bet_amount * 5 } else { -bet_amount }; // 5x payout if win
+    let delta = if won { bet_amount * 5 } else { -bet_amount };
     
     sqlx::query("UPDATE users SET bits = bits + ? WHERE id = ?")
         .bind(delta)
@@ -194,8 +190,6 @@ pub async fn handle_dice(
 }
 
 pub async fn handle_pay(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
-    // For newer Poise, we don't need to extract from interaction manually
-    // The parameters are passed through the command function
     ctx.send(poise::CreateReply::default().embed(
         CreateEmbed::new().title("Pay").description("Pay command needs to be updated with proper parameter passing!")
     )).await?;
@@ -208,7 +202,6 @@ pub async fn handle_rob(
 ) -> Result<(), Error> {
     ensure_user(&ctx).await?;
     
-    // Check if user is trying to rob themselves
     if ctx.author().id == target.id {
         ctx.send(poise::CreateReply::default().embed(
             CreateEmbed::new().title("Rob").description("You cannot rob yourself!")
@@ -218,13 +211,12 @@ pub async fn handle_rob(
     
     let target_id = target.id.to_string();
     
-    // Ensure target user exists
     sqlx::query("INSERT OR IGNORE INTO users (id, bits) VALUES (?, 0)")
         .bind(&target_id)
         .execute(&ctx.data().db)
         .await?;
     
-    // Get target's balance
+    
     let target_bits: i64 = sqlx::query("SELECT bits FROM users WHERE id = ?")
         .bind(&target_id)
         .fetch_one(&ctx.data().db)
@@ -238,11 +230,9 @@ pub async fn handle_rob(
         return Ok(());
     }
     
-    // Random steal amount (50-200)
     let stolen = rand::thread_rng().gen_range(50..=200);
     let actual_stolen = std::cmp::min(stolen, target_bits);
     
-    // Transfer bits
     sqlx::query("UPDATE users SET bits = bits - ? WHERE id = ?")
         .bind(actual_stolen)
         .bind(&target_id)
@@ -322,24 +312,20 @@ pub async fn handle_tax(
     
     let target_id = target.id.to_string();
     
-    // Ensure target user exists
     sqlx::query("INSERT OR IGNORE INTO users (id, bits) VALUES (?, 0)")
         .bind(&target_id)
         .execute(&ctx.data().db)
         .await?;
     
-    // Get target's balance
     let balance: i64 = sqlx::query("SELECT bits FROM users WHERE id = ?")
         .bind(&target_id)
         .fetch_one(&ctx.data().db)
         .await?
         .get("bits");
     
-    // Calculate tax
     let tax_amount = ((balance as f64 / 100.0) * percentage) as i64;
     let new_balance = balance - tax_amount;
     
-    // Update balance
     sqlx::query("UPDATE users SET bits = ? WHERE id = ?")
         .bind(new_balance)
         .bind(&target_id)
@@ -359,7 +345,6 @@ pub async fn handle_daily(ctx: poise::Context<'_, Data, Error>) -> Result<(), Er
     let user_id = ctx.author().id.to_string();
     let now = Utc::now().to_rfc3339();
     
-    // Check last daily claim
     let last_daily: Option<String> = sqlx::query("SELECT last_daily FROM users WHERE id = ?")
         .bind(&user_id)
         .fetch_one(&ctx.data().db)
@@ -398,7 +383,6 @@ pub async fn handle_work(ctx: poise::Context<'_, Data, Error>) -> Result<(), Err
     let user_id = ctx.author().id.to_string();
     let now = Utc::now().to_rfc3339();
     
-    // Check last work
     let last_work: Option<String> = sqlx::query("SELECT last_work FROM users WHERE id = ?")
         .bind(&user_id)
         .fetch_one(&ctx.data().db)
