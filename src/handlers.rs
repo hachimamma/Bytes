@@ -16,12 +16,9 @@ macro_rules! embed_reply {
 }
 
 async fn is_mod(ctx: &poise::Context<'_, Data, Error>) -> bool {
-    if let Some(_guild_id) = ctx.guild_id() {
-        if let Some(member) = ctx.author_member().await.as_ref() {
-            return member.permissions.unwrap_or_default().administrator();
-        }
-    }
-    false
+    let mod_ids = ["1371178674799509564"];
+    let user_id = ctx.author().id.to_string();
+    mod_ids.contains(&user_id.as_str())
 }
 
 async fn ensure_user(ctx: &poise::Context<'_, Data, Error>) -> Result<(), Error> {
