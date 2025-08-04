@@ -65,20 +65,20 @@ pub async fn leaderboard(ctx: poise::Context<'_, Data, Error>) -> Result<(), Err
 //counters for flips (A)
 pub async fn bitflip(
     ctx: poise::Context<'_, Data, Error>,
-    bet_amount: i64,
+    betamt: i64,
     bet_side: String,
 ) -> Result<(), Error> {
     ensure_user(&ctx).await?;
     
-    if bet_amount <= 0 {
+    if betamt <= 0 {
         ctx.send(poise::CreateReply::default().embed(
             CreateEmbed::new().title("Bitflip").description("Bet amount must be positive :3")
         )).await?;
         return Ok(());
     }
     
-    let bet_side_lower = bet_side.to_lowercase();
-    if bet_side_lower != "heads" && bet_side_lower != "tails" {
+    let bets_lower = bet_side.to_lowercase();
+    if bets_lower != "heads" && bets_lower != "tails" {
         ctx.send(poise::CreateReply::default().embed(
             CreateEmbed::new().title("Bitflip").description("Bet side must be heads or tails :3")
         )).await?;
@@ -87,24 +87,24 @@ pub async fn bitflip(
     
     let user_id = ctx.author().id.to_string();
     
-    let current_bits: i64 = sqlx::query("SELECT bits FROM users WHERE id = ?")
+    let c_bits: i64 = sqlx::query("SELECT bits FROM users WHERE id = ?")
         .bind(&user_id)
         .fetch_one(&ctx.data().db)
         .await?
         .get("bits");
     
-    if current_bits < bet_amount {
+    if c_bits < betamt {
         ctx.send(poise::CreateReply::default().embed(
             CreateEmbed::new().title("Bitflip").description("You don't have enough Bits to place this bet :3")
         )).await?;
         return Ok(());
     }
     
-    let flip_result = rand::random::<bool>();
-    let flip_side = if flip_result { "heads" } else { "tails" };
-    let won = bet_side_lower == flip_side;
+    let fp_res = rand::random::<bool>();
+    let fp_side = if fp_res { "heads" } else { "tails" };
+    let won = bets_lower == fp_side;
     
-    let delta = if won { bet_amount } else { -bet_amount };
+    let delta = if won { betamt } else { -betamt };
     
     sqlx::query("UPDATE users SET bits = bits + ? WHERE id = ?")
         .bind(delta)
@@ -112,17 +112,17 @@ pub async fn bitflip(
         .execute(&ctx.data().db)
         .await?;
     
-    let symbol = if flip_result { "H" } else { "T" };
-    let result_msg = if won {
-        format!("[{}] The coin landed on **{}**! You bet {} Bits on {} and won {} Bits :3", 
-                symbol, flip_side, bet_amount, bet_side_lower, bet_amount * 2)
+    let symbol = if fp_res { "H" } else { "T" };
+    let res_msg = if won {
+        format!("[{}] The coin landed on **{}**! You won {} Bits :3", 
+                symbol, fp_side, betamt)
     } else {
-        format!("[{}] The coin landed on **{}**... You bet {} Bits on {} and lost {} Bits :3", 
-                symbol, flip_side, bet_amount, bet_side_lower, bet_amount)
+        format!("[{}] The coin landed on **{}**... You lost {} Bits :3", 
+                symbol, fp_side, betamt)
     };
     
     ctx.send(poise::CreateReply::default().embed(
-        CreateEmbed::new().title("Bitflip").description(&result_msg)
+        CreateEmbed::new().title("Bitflip").description(&res_msg)
     )).await?;
     Ok(())
 }
@@ -130,12 +130,12 @@ pub async fn bitflip(
 //handle for dice (A)
 pub async fn dice(
     ctx: poise::Context<'_, Data, Error>,
-    bet_amount: i64,
+    betamt: i64,
     bet_side: i32,
 ) -> Result<(), Error> {
     ensure_user(&ctx).await?;
     
-    if bet_amount <= 0 {
+    if betamt <= 0 {
         ctx.send(poise::CreateReply::default().embed(
             CreateEmbed::new().title("Dice").description("Bet amount must be positive :3")
         )).await?;
@@ -151,13 +151,13 @@ pub async fn dice(
     
     let user_id = ctx.author().id.to_string();
     
-    let current_bits: i64 = sqlx::query("SELECT bits FROM users WHERE id = ?")
+    let c_bits: i64 = sqlx::query("SELECT bits FROM users WHERE id = ?")
         .bind(&user_id)
         .fetch_one(&ctx.data().db)
         .await?
         .get("bits");
     
-    if current_bits < bet_amount {
+    if c_bits < betamt {
         ctx.send(poise::CreateReply::default().embed(
             CreateEmbed::new().title("Dice").description("You don't have enough Bits to place this bet :3")
         )).await?;
@@ -167,7 +167,7 @@ pub async fn dice(
     let roll = rand::thread_rng().gen_range(1..=6);
     let won = roll == bet_side;
     
-    let delta = if won { bet_amount * 5 } else { -bet_amount };
+    let delta = if won { betamt * 5 } else { -betamt };
     
     sqlx::query("UPDATE users SET bits = bits + ? WHERE id = ?")
         .bind(delta)
@@ -175,16 +175,16 @@ pub async fn dice(
         .execute(&ctx.data().db)
         .await?;
     
-    let result_msg = if won {
-        format!("You rolled a {} and won! You bet {} Bits on {} and won {} Bits :3", 
-                roll, bet_amount, bet_side, bet_amount * 5)
+    let res_msg = if won {
+        format!("You rolled a {} and won! You won {} Bits :3", 
+                roll, betamt)
     } else {
-        format!("You rolled a {} and lost... You bet {} Bits on {} and lost {} Bits :3", 
-                roll, bet_amount, bet_side, bet_amount)
+        format!("You rolled a {} and lost... You lost {} Bits :3", 
+                roll, betamt)
     };
     
     ctx.send(poise::CreateReply::default().embed(
-        CreateEmbed::new().title("Dice Roll").description(&result_msg)
+        CreateEmbed::new().title("Dice Roll").description(&res_msg)
     )).await?;
     Ok(())
 }
@@ -299,7 +299,7 @@ pub async fn set(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
 pub async fn tax(
     ctx: poise::Context<'_, Data, Error>,
     target: poise::serenity_prelude::User,
-    percentage: f64,
+    percent: f64,
 ) -> Result<(), Error> {
     if !is_admin(&ctx).await {
         ctx.send(poise::CreateReply::default().embed(
@@ -308,9 +308,9 @@ pub async fn tax(
         return Ok(());
     }
     
-    if percentage < 0.0 || percentage > 100.0 {
+    if percent < 0.0 || percent > 100.0 {
         ctx.send(poise::CreateReply::default().embed(
-            CreateEmbed::new().title("Tax").description("Tax percentage must be between 0 and 100 :3")
+            CreateEmbed::new().title("Tax").description("Tax percent must be between 0 and 100 :3")
         )).await?;
         return Ok(());
     }
@@ -328,7 +328,7 @@ pub async fn tax(
         .await?
         .get("bits");
     
-    let tax_amount = ((balance as f64 / 100.0) * percentage) as i64;
+    let tax_amount = ((balance as f64 / 100.0) * percent) as i64;
     let new_balance = balance - tax_amount;
     
     sqlx::query("UPDATE users SET bits = ? WHERE id = ?")
@@ -339,7 +339,7 @@ pub async fn tax(
     ctx.send(poise::CreateReply::default().embed(
         CreateEmbed::new().title("Tax").description(&format!(
             "Taxed {}: {}%\nTax: {} Bits\nNew Balance: {} Bits :3", 
-            target.display_name(), percentage, tax_amount, new_balance
+            target.display_name(), percent, tax_amount, new_balance
         ))
     )).await?;
     Ok(())
