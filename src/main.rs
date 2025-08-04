@@ -20,7 +20,7 @@ async fn main() -> Result<(), Error> {
     let token = env::var("DISCORD_TOKEN")?;
     let db_url = env::var("DB_URL").unwrap_or("sqlite:database.db".into());
     
-    // Debug: print the database URL
+    //debug cuz im getting errors (wip)
     println!("Database URL: {}", &db_url);
     println!("Current directory: {:?}", std::env::current_dir());
     

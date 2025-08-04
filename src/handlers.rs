@@ -1,26 +1,25 @@
+//ignore warnings this works just fine
+
 use crate::{Data, Error};
 use chrono::{DateTime, Utc};
 use poise::serenity_prelude::CreateEmbed;
 use rand::Rng;
 use sqlx::Row;
 
-macro_rules! embed_reply {
-    ($ctx:expr, $title:expr, $desc:expr) => {
-        {
-            $ctx.send(poise::CreateReply::default().embed(
-                CreateEmbed::new().title($title).description($desc)
-            )).await?;
-            Ok(())
+//to check for core prevelege
+pub(crate) async fn is_admin(ctx: &poise::Context<'_, Data, Error>) -> bool {
+    if let Some(_guild_id) = ctx.guild_id() {
+        if let Some(member) = ctx.author_member().await.as_ref() {
+            member.permissions.unwrap_or_default().administrator()
+        } else { 
+            false 
         }
-    };
+    } else { 
+        false 
+    }
 }
 
-async fn is_mod(ctx: &poise::Context<'_, Data, Error>) -> bool {
-    let mod_ids = ["1371178674799509564"];
-    let user_id = ctx.author().id.to_string();
-    mod_ids.contains(&user_id.as_str())
-}
-
+//sql query check for value binding (WIP)
 async fn ensure_user(ctx: &poise::Context<'_, Data, Error>) -> Result<(), Error> {
     sqlx::query("INSERT OR IGNORE INTO users (id, bits) VALUES (?, 0)")
         .bind(ctx.author().id.to_string())
@@ -29,7 +28,8 @@ async fn ensure_user(ctx: &poise::Context<'_, Data, Error>) -> Result<(), Error>
     Ok(())
 }
 
-pub async fn handle_balance(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
+//sql query for balance binding (WIP)
+pub async fn balance(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
     ensure_user(&ctx).await?;
     let bits: i64 = sqlx::query("SELECT bits FROM users WHERE id = ?")
         .bind(ctx.author().id.to_string())
@@ -38,12 +38,13 @@ pub async fn handle_balance(ctx: poise::Context<'_, Data, Error>) -> Result<(), 
         .get("bits");
 
     ctx.send(poise::CreateReply::default().embed(
-        CreateEmbed::new().title("Balance").description(&format!("You have {} Bits.", bits))
+        CreateEmbed::new().title("Balance").description(&format!("You have {} Bits :3", bits))
     )).await?;
     Ok(())
 }
 
-pub async fn handle_leaderboard(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
+//sql query for lb binding (WIP)
+pub async fn leaderboard(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
     let rows = sqlx::query("SELECT id, bits FROM users ORDER BY bits DESC LIMIT 10")
         .fetch_all(&ctx.data().db)
         .await?;
@@ -61,7 +62,8 @@ pub async fn handle_leaderboard(ctx: poise::Context<'_, Data, Error>) -> Result<
     Ok(())
 }
 
-pub async fn handle_bitflip(
+//counters for flips (A)
+pub async fn bitflip(
     ctx: poise::Context<'_, Data, Error>,
     bet_amount: i64,
     bet_side: String,
@@ -70,7 +72,7 @@ pub async fn handle_bitflip(
     
     if bet_amount <= 0 {
         ctx.send(poise::CreateReply::default().embed(
-            CreateEmbed::new().title("Bitflip").description("Bet amount must be positive!")
+            CreateEmbed::new().title("Bitflip").description("Bet amount must be positive :3")
         )).await?;
         return Ok(());
     }
@@ -78,7 +80,7 @@ pub async fn handle_bitflip(
     let bet_side_lower = bet_side.to_lowercase();
     if bet_side_lower != "heads" && bet_side_lower != "tails" {
         ctx.send(poise::CreateReply::default().embed(
-            CreateEmbed::new().title("Bitflip").description("Bet side must be 'heads' or 'tails'!")
+            CreateEmbed::new().title("Bitflip").description("Bet side must be heads or tails :3")
         )).await?;
         return Ok(());
     }
@@ -93,7 +95,7 @@ pub async fn handle_bitflip(
     
     if current_bits < bet_amount {
         ctx.send(poise::CreateReply::default().embed(
-            CreateEmbed::new().title("Bitflip").description("You don't have enough Bits to place this bet!")
+            CreateEmbed::new().title("Bitflip").description("You don't have enough Bits to place this bet :3")
         )).await?;
         return Ok(());
     }
@@ -112,10 +114,10 @@ pub async fn handle_bitflip(
     
     let symbol = if flip_result { "H" } else { "T" };
     let result_msg = if won {
-        format!("[{}] The coin landed on **{}**! You bet {} Bits on {} and WON {} Bits!", 
+        format!("[{}] The coin landed on **{}**! You bet {} Bits on {} and won {} Bits :3", 
                 symbol, flip_side, bet_amount, bet_side_lower, bet_amount * 2)
     } else {
-        format!("[{}] The coin landed on **{}**... You bet {} Bits on {} and lost {} Bits.", 
+        format!("[{}] The coin landed on **{}**... You bet {} Bits on {} and lost {} Bits :3", 
                 symbol, flip_side, bet_amount, bet_side_lower, bet_amount)
     };
     
@@ -125,7 +127,8 @@ pub async fn handle_bitflip(
     Ok(())
 }
 
-pub async fn handle_dice(
+//handle for dice (A)
+pub async fn dice(
     ctx: poise::Context<'_, Data, Error>,
     bet_amount: i64,
     bet_side: i32,
@@ -134,14 +137,14 @@ pub async fn handle_dice(
     
     if bet_amount <= 0 {
         ctx.send(poise::CreateReply::default().embed(
-            CreateEmbed::new().title("Dice").description("Bet amount must be positive!")
+            CreateEmbed::new().title("Dice").description("Bet amount must be positive :3")
         )).await?;
         return Ok(());
     }
     
     if bet_side < 1 || bet_side > 6 {
         ctx.send(poise::CreateReply::default().embed(
-            CreateEmbed::new().title("Dice").description("Bet side must be between 1 and 6!")
+            CreateEmbed::new().title("Dice").description("Bet side must be between 1 and 6 :3")
         )).await?;
         return Ok(());
     }
@@ -156,7 +159,7 @@ pub async fn handle_dice(
     
     if current_bits < bet_amount {
         ctx.send(poise::CreateReply::default().embed(
-            CreateEmbed::new().title("Dice").description("You don't have enough Bits to place this bet!")
+            CreateEmbed::new().title("Dice").description("You don't have enough Bits to place this bet :3")
         )).await?;
         return Ok(());
     }
@@ -173,10 +176,10 @@ pub async fn handle_dice(
         .await?;
     
     let result_msg = if won {
-        format!(":) You rolled a {} and WON! You bet {} Bits on {} and won {} Bits!", 
+        format!("You rolled a {} and won! You bet {} Bits on {} and won {} Bits :3", 
                 roll, bet_amount, bet_side, bet_amount * 5)
     } else {
-        format!(":( You rolled a {} and lost... You bet {} Bits on {} and lost {} Bits.", 
+        format!("You rolled a {} and lost... You bet {} Bits on {} and lost {} Bits :3", 
                 roll, bet_amount, bet_side, bet_amount)
     };
     
@@ -186,14 +189,15 @@ pub async fn handle_dice(
     Ok(())
 }
 
-pub async fn handle_pay(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
+pub async fn pay(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
     ctx.send(poise::CreateReply::default().embed(
-        CreateEmbed::new().title("Pay").description("Pay command needs to be updated with proper parameter passing!")
+        CreateEmbed::new().title("Pay").description("Pay command needs to be updated with params :3")
     )).await?;
     Ok(())
 }
 
-pub async fn handle_rob(
+//ciunter for rob
+pub async fn rob(
     ctx: poise::Context<'_, Data, Error>,
     target: poise::serenity_prelude::User,
 ) -> Result<(), Error> {
@@ -201,7 +205,7 @@ pub async fn handle_rob(
     
     if ctx.author().id == target.id {
         ctx.send(poise::CreateReply::default().embed(
-            CreateEmbed::new().title("Rob").description("You cannot rob yourself!")
+            CreateEmbed::new().title("Rob").description("You cannot rob yourself dummy :3")
         )).await?;
         return Ok(());
     }
@@ -222,7 +226,7 @@ pub async fn handle_rob(
     
     if target_bits < 200 {
         ctx.send(poise::CreateReply::default().embed(
-            CreateEmbed::new().title("Rob").description("Target must have at least 200 Bits to be robbed!")
+            CreateEmbed::new().title("Rob").description("Target must have at least 200 Bits to be robbed :3")
         )).await?;
         return Ok(());
     }
@@ -241,68 +245,72 @@ pub async fn handle_rob(
         .execute(&ctx.data().db).await?;
     
     ctx.send(poise::CreateReply::default().embed(
-        CreateEmbed::new().title("Rob").description(&format!("You stole {} Bits from {}!", actual_stolen, target.display_name()))
+        CreateEmbed::new().title("Rob").description(&format!("You stole {} Bits from {} :>", actual_stolen, target.display_name()))
     )).await?;
     Ok(())
 }
 
-pub async fn handle_add(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
-    if !is_mod(&ctx).await {
+//add func only for admins with admin_check above
+pub async fn add(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
+    if !is_admin(&ctx).await {
         ctx.send(poise::CreateReply::default().embed(
-            CreateEmbed::new().title("Add").description("Only mods can use this.")
+            CreateEmbed::new().title("Add").description("Only admins can use this command :3")
         )).await?;
         return Ok(());
     }
     
     ctx.send(poise::CreateReply::default().embed(
-        CreateEmbed::new().title("Add").description("Add command needs parameter passing!")
+        CreateEmbed::new().title("Add").description("add command is handled in commands.rs now (the proj is WIP)")
     )).await?;
     Ok(())
 }
 
-pub async fn handle_subtract(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
-    if !is_mod(&ctx).await {
+//sub func for admins same as add but -
+pub async fn subtract(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
+    if !is_admin(&ctx).await {
         ctx.send(poise::CreateReply::default().embed(
-            CreateEmbed::new().title("Subtract").description("Only mods can use this.")
+            CreateEmbed::new().title("Subtract").description("Only admins can use this command :3")
         )).await?;
         return Ok(());
     }
     
     ctx.send(poise::CreateReply::default().embed(
-        CreateEmbed::new().title("Subtract").description("Subtract command needs parameter passing!")
+        CreateEmbed::new().title("Subtract").description("subtract command is handled in commands.rs now :))")
     )).await?;
     Ok(())
 }
 
-pub async fn handle_set(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
-    if !is_mod(&ctx).await {
+//set func for setting bal
+pub async fn set(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
+    if !is_admin(&ctx).await {
         ctx.send(poise::CreateReply::default().embed(
-            CreateEmbed::new().title("Set").description("Only mods can use this.")
+            CreateEmbed::new().title("Set").description("Only admins can use this command :3")
         )).await?;
         return Ok(());
     }
     
     ctx.send(poise::CreateReply::default().embed(
-        CreateEmbed::new().title("Set").description("Set command needs parameter passing!")
+        CreateEmbed::new().title("Set").description("set command is handled in commands.rs now :3 (the proj is wip)")
     )).await?;
     Ok(())
 }
 
-pub async fn handle_tax(
+//tax counter for admins
+pub async fn tax(
     ctx: poise::Context<'_, Data, Error>,
     target: poise::serenity_prelude::User,
     percentage: f64,
 ) -> Result<(), Error> {
-    if !is_mod(&ctx).await {
+    if !is_admin(&ctx).await {
         ctx.send(poise::CreateReply::default().embed(
-            CreateEmbed::new().title("Tax").description("Only admins can use this command!")
+            CreateEmbed::new().title("Tax").description("Only admins can use this command :>")
         )).await?;
         return Ok(());
     }
     
     if percentage < 0.0 || percentage > 100.0 {
         ctx.send(poise::CreateReply::default().embed(
-            CreateEmbed::new().title("Tax").description("Tax percentage must be between 0 and 100!")
+            CreateEmbed::new().title("Tax").description("Tax percentage must be between 0 and 100 :3")
         )).await?;
         return Ok(());
     }
@@ -330,14 +338,15 @@ pub async fn handle_tax(
     
     ctx.send(poise::CreateReply::default().embed(
         CreateEmbed::new().title("Tax").description(&format!(
-            "Taxed {}: {}%\nTax: {} Bits\nNew Balance: {} Bits", 
+            "Taxed {}: {}%\nTax: {} Bits\nNew Balance: {} Bits :3", 
             target.display_name(), percentage, tax_amount, new_balance
         ))
     )).await?;
     Ok(())
 }
 
-pub async fn handle_daily(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
+//daily func for all (needs better time logic, pls update)
+pub async fn daily(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
     ensure_user(&ctx).await?;
     let user_id = ctx.author().id.to_string();
     let now = Utc::now().to_rfc3339();
@@ -354,7 +363,7 @@ pub async fn handle_daily(ctx: poise::Context<'_, Data, Error>) -> Result<(), Er
             if time_diff.num_hours() < 24 {
                 let hours_left = 24 - time_diff.num_hours();
                 ctx.send(poise::CreateReply::default().embed(
-                    CreateEmbed::new().title("Daily").description(&format!("You already claimed your daily! Try again in {} hours.", hours_left))
+                    CreateEmbed::new().title("Daily").description(&format!("You already claimed your daily! Try again in {} hours :3", hours_left))
                 )).await?;
                 return Ok(());
             }
@@ -375,7 +384,8 @@ pub async fn handle_daily(ctx: poise::Context<'_, Data, Error>) -> Result<(), Er
     Ok(())
 }
 
-pub async fn handle_work(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
+//can be removed, no need for this
+pub async fn work(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
     ensure_user(&ctx).await?;
     let user_id = ctx.author().id.to_string();
     let now = Utc::now().to_rfc3339();
@@ -392,7 +402,7 @@ pub async fn handle_work(ctx: poise::Context<'_, Data, Error>) -> Result<(), Err
             if time_diff.num_hours() < 1 {
                 let minutes_left = 60 - time_diff.num_minutes();
                 ctx.send(poise::CreateReply::default().embed(
-                    CreateEmbed::new().title("Work").description(&format!("You need to wait {} minutes before working again!", minutes_left))
+                    CreateEmbed::new().title("Work").description(&format!("You need to wait {} minutes before working again :3", minutes_left))
                 )).await?;
                 return Ok(());
             }
@@ -408,12 +418,13 @@ pub async fn handle_work(ctx: poise::Context<'_, Data, Error>) -> Result<(), Err
         .await?;
     
     ctx.send(poise::CreateReply::default().embed(
-        CreateEmbed::new().title("Work").description(&format!("You worked hard and earned {} Bits! B)", reward))
+        CreateEmbed::new().title("Work").description(&format!("You worked hard and earned {} Bits B)", reward))
     )).await?;
     Ok(())
 }
 
-pub async fn handle_weekly(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
+//weekly counter for all, pls fix time if u can
+pub async fn weekly(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
     ensure_user(&ctx).await?;
     let user_id = ctx.author().id.to_string();
     let now = Utc::now().to_rfc3339();
@@ -430,7 +441,7 @@ pub async fn handle_weekly(ctx: poise::Context<'_, Data, Error>) -> Result<(), E
             if time_diff.num_days() < 7 {
                 let days_left = 7 - time_diff.num_days();
                 ctx.send(poise::CreateReply::default().embed(
-                    CreateEmbed::new().title("Weekly").description(&format!("You already claimed your weekly! Try again in {} days.", days_left))
+                    CreateEmbed::new().title("Weekly").description(&format!("You already claimed your weekly! Try again in {} days :3", days_left))
                 )).await?;
                 return Ok(());
             }
@@ -446,12 +457,13 @@ pub async fn handle_weekly(ctx: poise::Context<'_, Data, Error>) -> Result<(), E
         .await?;
     
     ctx.send(poise::CreateReply::default().embed(
-        CreateEmbed::new().title("Weekly").description(&format!("You claimed your weekly reward of {} Bits! :P", reward))
+        CreateEmbed::new().title("Weekly").description(&format!("You claimed your weekly reward of {} Bits :P", reward))
     )).await?;
     Ok(())
 }
 
-pub async fn handle_monthly(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
+//monthly counter
+pub async fn monthly(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
     ensure_user(&ctx).await?;
     let user_id = ctx.author().id.to_string();
     let now = Utc::now().to_rfc3339();
@@ -468,7 +480,7 @@ pub async fn handle_monthly(ctx: poise::Context<'_, Data, Error>) -> Result<(), 
             if time_diff.num_days() < 30 {
                 let days_left = 30 - time_diff.num_days();
                 ctx.send(poise::CreateReply::default().embed(
-                    CreateEmbed::new().title("Monthly").description(&format!("You already claimed your monthly! Try again in {} days.", days_left))
+                    CreateEmbed::new().title("Monthly").description(&format!("You already claimed your monthly! Try again in {} days :3", days_left))
                 )).await?;
                 return Ok(());
             }
@@ -484,12 +496,13 @@ pub async fn handle_monthly(ctx: poise::Context<'_, Data, Error>) -> Result<(), 
         .await?;
     
     ctx.send(poise::CreateReply::default().embed(
-        CreateEmbed::new().title("Monthly").description(&format!("You claimed your monthly reward of {} Bits! 8)", reward))
+        CreateEmbed::new().title("Monthly").description(&format!("You claimed your monthly reward of {} Bits 8)", reward))
     )).await?;
     Ok(())
 }
 
-pub async fn handle_yearly(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
+//pls fix this thing, its really bad logic
+pub async fn yearly(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
     ensure_user(&ctx).await?;
     let user_id = ctx.author().id.to_string();
     let now = Utc::now().to_rfc3339();
@@ -506,7 +519,7 @@ pub async fn handle_yearly(ctx: poise::Context<'_, Data, Error>) -> Result<(), E
             if time_diff.num_days() < 365 {
                 let days_left = 365 - time_diff.num_days();
                 ctx.send(poise::CreateReply::default().embed(
-                    CreateEmbed::new().title("Yearly").description(&format!("You already claimed your yearly! Try again in {} days.", days_left))
+                    CreateEmbed::new().title("Yearly").description(&format!("You already claimed your yearly! Try again in {} days :3", days_left))
                 )).await?;
                 return Ok(());
             }
@@ -522,7 +535,7 @@ pub async fn handle_yearly(ctx: poise::Context<'_, Data, Error>) -> Result<(), E
         .await?;
     
     ctx.send(poise::CreateReply::default().embed(
-        CreateEmbed::new().title("Yearly").description(&format!("You claimed your yearly reward of {} Bits! ^_^", reward))
+        CreateEmbed::new().title("Yearly").description(&format!("You claimed your yearly reward of {} Bits ^_^", reward))
     )).await?;
     Ok(())
 }
