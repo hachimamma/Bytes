@@ -12,11 +12,6 @@ pub async fn daily(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
 }
 
 #[poise::command(slash_command)]
-pub async fn work(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
-    crate::handlers::work(ctx).await
-}
-
-#[poise::command(slash_command)]
 pub async fn balance(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
     crate::handlers::balance(ctx).await
 }
@@ -35,12 +30,12 @@ pub async fn rob(
 }
 
 #[poise::command(slash_command)]
-pub async fn bitflip(
+pub async fn coinflip(
     ctx: poise::Context<'_, Data, Error>,
     #[description = "Amount to bet"] betamt: i64,
 ) -> Result<(), Error> {
     let embed = CreateEmbed::new()
-        .title("Bitflip")
+        .title("Coinflip")
         .description(&format!("**Bet Amount:** {} Bits\n\nSelect your side:", betamt))
         .color(0x00ff00);
 
@@ -57,7 +52,7 @@ pub async fn bitflip(
             ],
         },
     )
-    .placeholder("Choose heads or tails :3");
+    .placeholder("Choose heads or tails :3.");
 
     let components = vec![CreateActionRow::SelectMenu(select_menu)];
 
@@ -85,10 +80,10 @@ pub async fn bitflip(
             poise::serenity_prelude::CreateInteractionResponse::Acknowledge,
         ).await?;
 
-        bitflip_game(ctx, betamt, bet_side, &msg).await?;
+        coinflip_game(ctx, betamt, bet_side, &msg).await?;
     } else {
         let timeout_embed = CreateEmbed::new()
-            .title("Bitflip")
+            .title("Coinflip")
             .description("Selection timed out!")
             .color(0xff0000);
 
@@ -170,14 +165,14 @@ pub async fn dice(
 }
 
 //helper func for ingame logic
-async fn bitflip_game(
+async fn coinflip_game(
     ctx: poise::Context<'_, Data, Error>,
     betamt: i64,
     bet_side: String,
     msg: &poise::ReplyHandle<'_>,
 ) -> Result<(), Error> {
     let processing_embed = CreateEmbed::new()
-        .title("Bitflip")
+        .title("Coinflip")
         .description(&format!("**Bet Amount:** {} Bits\n**Your Choice:** {}\n\nFlipping...", betamt, bet_side))
         .color(0xffff00);
 
@@ -188,7 +183,7 @@ async fn bitflip_game(
 
     tokio::time::sleep(Duration::from_millis(1500)).await;
 
-    crate::handlers::bitflip(ctx, betamt, bet_side).await?;
+    crate::handlers::coinflip(ctx, betamt, bet_side).await?;
 
     Ok(())
 }
@@ -202,7 +197,7 @@ async fn dice_game(
 ) -> Result<(), Error> {
     let processing_embed = CreateEmbed::new()
         .title("Dice Roll")
-        .description(&format!("**Bet Amount:** {} Bits\n**Your Number:** {}\n\nRolling... XD", betamt, bet_side))
+        .description(&format!("**Bet Amount:** {} Bits\n**Your Number:** {}\n\nRolling...", betamt, bet_side))
         .color(0xffff00);
 
     msg.edit(ctx, poise::CreateReply::default()
@@ -225,7 +220,7 @@ pub async fn pay(
 ) -> Result<(), Error> {
     if amt <= 0 {
         ctx.send(poise::CreateReply::default().embed(
-            CreateEmbed::new().title("Pay").description("Amount must be positive :3")
+            CreateEmbed::new().title("Pay").description("Amount must be positive :3.")
         )).await?;
         return Ok(());
     }

@@ -3,6 +3,8 @@
 use crate::{Data, Error};
 use chrono::{DateTime, Utc};
 use poise::serenity_prelude::CreateEmbed;
+use poise::serenity_prelude::{CreateEmbedAuthor, CreateEmbedFooter};
+use num_format::{Locale, ToFormattedString};
 use rand::Rng;
 use sqlx::Row;
 
@@ -38,10 +40,17 @@ pub async fn balance(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> 
         .get("bits");
 
     ctx.send(poise::CreateReply::default().embed(
-        CreateEmbed::new().title("Balance").description(&format!("You have {} Bits :3", bits))
+        CreateEmbed::new()
+            .author(CreateEmbedAuthor::new(ctx.author().name.clone()).icon_url(ctx.author().avatar_url().unwrap_or_default()))
+            .title("Balance")
+            .description(format!("{} bits", bits.to_formatted_string(&Locale::en)))
+            .footer(CreateEmbedFooter::new("Bits"))
+            .thumbnail("https://cdn.discordapp.com/assets/2c21aeda16de354ba5334551a883b481.png")
+            .color(0x5865F2) // Discord blurple
     )).await?;
     Ok(())
 }
+
 
 //sql query for lb binding (WIP)
 pub async fn leaderboard(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
@@ -57,13 +66,16 @@ pub async fn leaderboard(ctx: poise::Context<'_, Data, Error>) -> Result<(), Err
     }
 
     ctx.send(poise::CreateReply::default().embed(
-        CreateEmbed::new().title("Leaderboard").description(&msg)
+        CreateEmbed::new()
+            .title("Top Sigmas Leaderboard")
+            .description(&msg)
+            .color(0x6C3483)
     )).await?;
     Ok(())
 }
 
-//counters for flips (A)
-pub async fn bitflip(
+//counters for coinflips (A)
+pub async fn coinflip(
     ctx: poise::Context<'_, Data, Error>,
     betamt: i64,
     bet_side: String,
@@ -72,7 +84,7 @@ pub async fn bitflip(
     
     if betamt <= 0 {
         ctx.send(poise::CreateReply::default().embed(
-            CreateEmbed::new().title("Bitflip").description("Bet amount must be positive :3")
+            CreateEmbed::new().title("Coinflip").description("Bet amount must be positive. :3")
         )).await?;
         return Ok(());
     }
@@ -80,7 +92,7 @@ pub async fn bitflip(
     let bets_lower = bet_side.to_lowercase();
     if bets_lower != "heads" && bets_lower != "tails" {
         ctx.send(poise::CreateReply::default().embed(
-            CreateEmbed::new().title("Bitflip").description("Bet side must be heads or tails :3")
+            CreateEmbed::new().title("Coinflip").description("Bet side must be heads or tails. :3")
         )).await?;
         return Ok(());
     }
@@ -95,7 +107,7 @@ pub async fn bitflip(
     
     if c_bits < betamt {
         ctx.send(poise::CreateReply::default().embed(
-            CreateEmbed::new().title("Bitflip").description("You don't have enough Bits to place this bet :3")
+            CreateEmbed::new().title("Coinflip").description("You don't have enough Bits to place this bet. :3")
         )).await?;
         return Ok(());
     }
@@ -113,20 +125,22 @@ pub async fn bitflip(
         .await?;
     
     let symbol = if fp_res { "H" } else { "T" };
-    let res_msg = if won {
-        format!("[{}] The coin landed on **{}**! You won {} Bits :3", 
-                symbol, fp_side, betamt)
+    let (res_msg, embed_color) = if won {
+        (format!("[{}] The coin landed on **{}**! You won {} Bits. :3", 
+                symbol, fp_side, betamt), 0x00ff00)
     } else {
-        format!("[{}] The coin landed on **{}**... You lost {} Bits :3", 
-                symbol, fp_side, betamt)
+        (format!("[{}] The coin landed on **{}**... You lost {} Bits. :3", 
+                symbol, fp_side, betamt), 0xff0000)
     };
     
     ctx.send(poise::CreateReply::default().embed(
-        CreateEmbed::new().title("Bitflip").description(&res_msg)
+        CreateEmbed::new()
+            .title("Coinflip")
+            .description(&res_msg)
+            .color(embed_color)
     )).await?;
     Ok(())
 }
-
 //handle for dice (A)
 pub async fn dice(
     ctx: poise::Context<'_, Data, Error>,
@@ -137,14 +151,14 @@ pub async fn dice(
     
     if betamt <= 0 {
         ctx.send(poise::CreateReply::default().embed(
-            CreateEmbed::new().title("Dice").description("Bet amount must be positive :3")
+            CreateEmbed::new().title("Dice").description("Bet amount must be positive. :3")
         )).await?;
         return Ok(());
     }
     
     if bet_side < 1 || bet_side > 6 {
         ctx.send(poise::CreateReply::default().embed(
-            CreateEmbed::new().title("Dice").description("Bet side must be between 1 and 6 :3")
+            CreateEmbed::new().title("Dice").description("Bet side must be between 1 and 6. :3")
         )).await?;
         return Ok(());
     }
@@ -159,7 +173,7 @@ pub async fn dice(
     
     if c_bits < betamt {
         ctx.send(poise::CreateReply::default().embed(
-            CreateEmbed::new().title("Dice").description("You don't have enough Bits to place this bet :3")
+            CreateEmbed::new().title("Dice").description("You don't have enough Bits to place this bet. :3")
         )).await?;
         return Ok(());
     }
@@ -175,23 +189,26 @@ pub async fn dice(
         .execute(&ctx.data().db)
         .await?;
     
-    let res_msg = if won {
-        format!("You rolled a {} and won! You won {} Bits :3", 
-                roll, betamt)
+    let (res_msg, embed_color) = if won {
+        (format!("You rolled a {} and won! You won {} Bits. :3", 
+                roll, betamt * 5), 0x00ff00)
     } else {
-        format!("You rolled a {} and lost... You lost {} Bits :3", 
-                roll, betamt)
+        (format!("You rolled a {} and lost... You lost {} Bits. :3", 
+                roll, betamt), 0xff0000)
     };
     
     ctx.send(poise::CreateReply::default().embed(
-        CreateEmbed::new().title("Dice Roll").description(&res_msg)
+        CreateEmbed::new()
+            .title("Dice Roll")
+            .description(&res_msg)
+            .color(embed_color)
     )).await?;
     Ok(())
 }
 
 pub async fn pay(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
     ctx.send(poise::CreateReply::default().embed(
-        CreateEmbed::new().title("Pay").description("Pay command needs to be updated with params :3")
+        CreateEmbed::new().title("Pay").description("Pay command needs to be updated with params. :3")
     )).await?;
     Ok(())
 }
@@ -202,50 +219,58 @@ pub async fn rob(
     target: poise::serenity_prelude::User,
 ) -> Result<(), Error> {
     ensure_user(&ctx).await?;
-    
+
     if ctx.author().id == target.id {
         ctx.send(poise::CreateReply::default().embed(
-            CreateEmbed::new().title("Rob").description("You cannot rob yourself dummy :3")
+            CreateEmbed::new()
+                .title("Rob")
+                .description("You cannot rob yourself dummy. :3")
+                .color(0x6C3483)
         )).await?;
         return Ok(());
     }
-    
+
     let target_id = target.id.to_string();
-    
+
     sqlx::query("INSERT OR IGNORE INTO users (id, bits) VALUES (?, 0)")
         .bind(&target_id)
         .execute(&ctx.data().db)
         .await?;
-    
-    
+
     let target_bits: i64 = sqlx::query("SELECT bits FROM users WHERE id = ?")
         .bind(&target_id)
         .fetch_one(&ctx.data().db)
         .await?
         .get("bits");
-    
+
     if target_bits < 200 {
         ctx.send(poise::CreateReply::default().embed(
-            CreateEmbed::new().title("Rob").description("Target must have at least 200 Bits to be robbed :3")
+            CreateEmbed::new()
+                .title("Rob")
+                .description("Target must have at least 200 Bits to be robbed. :3")
+                .color(0x6C3483)
         )).await?;
         return Ok(());
     }
-    
+
     let stolen = rand::thread_rng().gen_range(50..=200);
-    let actual_stolen = std::cmp::min(stolen, target_bits);
-    
+    let act_s = std::cmp::min(stolen, target_bits);
+
     sqlx::query("UPDATE users SET bits = bits - ? WHERE id = ?")
-        .bind(actual_stolen)
+        .bind(act_s)
         .bind(&target_id)
         .execute(&ctx.data().db).await?;
-    
+
     sqlx::query("UPDATE users SET bits = bits + ? WHERE id = ?")
-        .bind(actual_stolen)
+        .bind(act_s)
         .bind(ctx.author().id.to_string())
         .execute(&ctx.data().db).await?;
-    
+
     ctx.send(poise::CreateReply::default().embed(
-        CreateEmbed::new().title("Rob").description(&format!("You stole {} Bits from {} :>", actual_stolen, target.display_name()))
+        CreateEmbed::new()
+            .title("Rob")
+            .description(&format!("You stole {} Bits from {}. :>", act_s, target.display_name()))
+            .color(0x6C3483)
     )).await?;
     Ok(())
 }
@@ -254,7 +279,7 @@ pub async fn rob(
 pub async fn add(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
     if !is_admin(&ctx).await {
         ctx.send(poise::CreateReply::default().embed(
-            CreateEmbed::new().title("Add").description("Only admins can use this command :3")
+            CreateEmbed::new().title("Add").description("Only admins can use this command. :3")
         )).await?;
         return Ok(());
     }
@@ -269,13 +294,13 @@ pub async fn add(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
 pub async fn subtract(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
     if !is_admin(&ctx).await {
         ctx.send(poise::CreateReply::default().embed(
-            CreateEmbed::new().title("Subtract").description("Only admins can use this command :3")
+            CreateEmbed::new().title("Subtract").description("Only admins can use this command. :3")
         )).await?;
         return Ok(());
     }
     
     ctx.send(poise::CreateReply::default().embed(
-        CreateEmbed::new().title("Subtract").description("subtract command is handled in commands.rs now :))")
+        CreateEmbed::new().title("Subtract").description("subtract command is handled in commands.rs now (the proj is WIP)")
     )).await?;
     Ok(())
 }
@@ -284,13 +309,13 @@ pub async fn subtract(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error>
 pub async fn set(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
     if !is_admin(&ctx).await {
         ctx.send(poise::CreateReply::default().embed(
-            CreateEmbed::new().title("Set").description("Only admins can use this command :3")
+            CreateEmbed::new().title("Set").description("Only admins can use this command. :3")
         )).await?;
         return Ok(());
     }
     
     ctx.send(poise::CreateReply::default().embed(
-        CreateEmbed::new().title("Set").description("set command is handled in commands.rs now :3 (the proj is wip)")
+        CreateEmbed::new().title("Set").description("set command is handled in commands.rs now (the proj is wip)")
     )).await?;
     Ok(())
 }
@@ -303,14 +328,14 @@ pub async fn tax(
 ) -> Result<(), Error> {
     if !is_admin(&ctx).await {
         ctx.send(poise::CreateReply::default().embed(
-            CreateEmbed::new().title("Tax").description("Only admins can use this command :>")
+            CreateEmbed::new().title("Tax").description("Only admins can use this command. :>")
         )).await?;
         return Ok(());
     }
     
     if percent < 0.0 || percent > 100.0 {
         ctx.send(poise::CreateReply::default().embed(
-            CreateEmbed::new().title("Tax").description("Tax percent must be between 0 and 100 :3")
+            CreateEmbed::new().title("Tax").description("Tax percent must be between 0 and 100. :3")
         )).await?;
         return Ok(());
     }
@@ -338,38 +363,42 @@ pub async fn tax(
     
     ctx.send(poise::CreateReply::default().embed(
         CreateEmbed::new().title("Tax").description(&format!(
-            "Taxed {}: {}%\nTax: {} Bits\nNew Balance: {} Bits :3", 
+            "Taxed {}: {}%\nTax: {} Bits\nNew Balance: {} Bits. :3", 
             target.display_name(), percent, tax_amount, new_balance
         ))
     )).await?;
     Ok(())
 }
 
-//daily func for all (needs better time logic, pls update)
+
+//daily counter
 pub async fn daily(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
     ensure_user(&ctx).await?;
     let user_id = ctx.author().id.to_string();
     let now = Utc::now().to_rfc3339();
-    
+
     let last_daily: Option<String> = sqlx::query("SELECT last_daily FROM users WHERE id = ?")
         .bind(&user_id)
         .fetch_one(&ctx.data().db)
         .await?
         .get("last_daily");
-    
+
     if let Some(last_time_str) = last_daily {
         if let Ok(last_time) = DateTime::parse_from_rfc3339(&last_time_str) {
             let time_diff = Utc::now().signed_duration_since(last_time);
             if time_diff.num_hours() < 24 {
                 let hours_left = 24 - time_diff.num_hours();
                 ctx.send(poise::CreateReply::default().embed(
-                    CreateEmbed::new().title("Daily").description(&format!("You already claimed your daily! Try again in {} hours :3", hours_left))
+                    CreateEmbed::new()
+                        .title("Daily")
+                        .description(&format!("You already claimed your daily! Try again in {} hours. :3", hours_left))
+                        .color(0x6C3483) // Dark purple
                 )).await?;
                 return Ok(());
             }
         }
     }
-    
+
     let reward = 100;
     sqlx::query("UPDATE users SET bits = bits + ?, last_daily = ? WHERE id = ?")
         .bind(reward)
@@ -377,48 +406,12 @@ pub async fn daily(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
         .bind(&user_id)
         .execute(&ctx.data().db)
         .await?;
-    
-    ctx.send(poise::CreateReply::default().embed(
-        CreateEmbed::new().title("Daily").description(&format!("You claimed your daily reward of {} Bits! :D", reward))
-    )).await?;
-    Ok(())
-}
 
-//can be removed, no need for this
-pub async fn work(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
-    ensure_user(&ctx).await?;
-    let user_id = ctx.author().id.to_string();
-    let now = Utc::now().to_rfc3339();
-    
-    let last_work: Option<String> = sqlx::query("SELECT last_work FROM users WHERE id = ?")
-        .bind(&user_id)
-        .fetch_one(&ctx.data().db)
-        .await?
-        .get("last_work");
-    
-    if let Some(last_time_str) = last_work {
-        if let Ok(last_time) = DateTime::parse_from_rfc3339(&last_time_str) {
-            let time_diff = Utc::now().signed_duration_since(last_time);
-            if time_diff.num_hours() < 1 {
-                let minutes_left = 60 - time_diff.num_minutes();
-                ctx.send(poise::CreateReply::default().embed(
-                    CreateEmbed::new().title("Work").description(&format!("You need to wait {} minutes before working again :3", minutes_left))
-                )).await?;
-                return Ok(());
-            }
-        }
-    }
-    
-    let reward = rand::thread_rng().gen_range(20..=80);
-    sqlx::query("UPDATE users SET bits = bits + ?, last_work = ? WHERE id = ?")
-        .bind(reward)
-        .bind(&now)
-        .bind(&user_id)
-        .execute(&ctx.data().db)
-        .await?;
-    
     ctx.send(poise::CreateReply::default().embed(
-        CreateEmbed::new().title("Work").description(&format!("You worked hard and earned {} Bits B)", reward))
+        CreateEmbed::new()
+            .title("Daily")
+            .description(&format!("You claimed your daily reward of {} Bits! :D", reward))
+            .color(0x6C3483) // Dark purple
     )).await?;
     Ok(())
 }
@@ -441,7 +434,7 @@ pub async fn weekly(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
             if time_diff.num_days() < 7 {
                 let days_left = 7 - time_diff.num_days();
                 ctx.send(poise::CreateReply::default().embed(
-                    CreateEmbed::new().title("Weekly").description(&format!("You already claimed your weekly! Try again in {} days :3", days_left))
+                    CreateEmbed::new().title("Weekly").description(&format!("You already claimed your weekly! Try again in {} days. :3", days_left))
                 )).await?;
                 return Ok(());
             }
@@ -457,7 +450,7 @@ pub async fn weekly(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
         .await?;
     
     ctx.send(poise::CreateReply::default().embed(
-        CreateEmbed::new().title("Weekly").description(&format!("You claimed your weekly reward of {} Bits :P", reward))
+        CreateEmbed::new().title("Weekly").description(&format!("You claimed your weekly reward of {} Bits! :P", reward))
     )).await?;
     Ok(())
 }
@@ -467,26 +460,29 @@ pub async fn monthly(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> 
     ensure_user(&ctx).await?;
     let user_id = ctx.author().id.to_string();
     let now = Utc::now().to_rfc3339();
-    
+
     let last_monthly: Option<String> = sqlx::query("SELECT last_monthly FROM users WHERE id = ?")
         .bind(&user_id)
         .fetch_one(&ctx.data().db)
         .await?
         .get("last_monthly");
-    
+
     if let Some(last_time_str) = last_monthly {
         if let Ok(last_time) = DateTime::parse_from_rfc3339(&last_time_str) {
             let time_diff = Utc::now().signed_duration_since(last_time);
             if time_diff.num_days() < 30 {
                 let days_left = 30 - time_diff.num_days();
                 ctx.send(poise::CreateReply::default().embed(
-                    CreateEmbed::new().title("Monthly").description(&format!("You already claimed your monthly! Try again in {} days :3", days_left))
+                    CreateEmbed::new()
+                        .title("Monthly")
+                        .description(&format!("You already claimed your monthly! Try again in {} days. :3", days_left))
+                        .color(0x6C3483) // Dark purple
                 )).await?;
                 return Ok(());
             }
         }
     }
-    
+
     let reward = 2000;
     sqlx::query("UPDATE users SET bits = bits + ?, last_monthly = ? WHERE id = ?")
         .bind(reward)
@@ -494,9 +490,12 @@ pub async fn monthly(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> 
         .bind(&user_id)
         .execute(&ctx.data().db)
         .await?;
-    
+
     ctx.send(poise::CreateReply::default().embed(
-        CreateEmbed::new().title("Monthly").description(&format!("You claimed your monthly reward of {} Bits 8)", reward))
+        CreateEmbed::new()
+            .title("Monthly")
+            .description(&format!("You claimed your monthly reward of {} Bits! 8)", reward))
+            .color(0x6C3483)
     )).await?;
     Ok(())
 }
@@ -519,7 +518,7 @@ pub async fn yearly(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
             if time_diff.num_days() < 365 {
                 let days_left = 365 - time_diff.num_days();
                 ctx.send(poise::CreateReply::default().embed(
-                    CreateEmbed::new().title("Yearly").description(&format!("You already claimed your yearly! Try again in {} days :3", days_left))
+                    CreateEmbed::new().title("Yearly").description(&format!("You already claimed your yearly! Try again in {} days. :3", days_left))
                 )).await?;
                 return Ok(());
             }
@@ -535,7 +534,7 @@ pub async fn yearly(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
         .await?;
     
     ctx.send(poise::CreateReply::default().embed(
-        CreateEmbed::new().title("Yearly").description(&format!("You claimed your yearly reward of {} Bits ^_^", reward))
+        CreateEmbed::new().title("Yearly").description(&format!("You claimed your yearly reward of {} Bits! ^_^", reward))
     )).await?;
     Ok(())
 }
