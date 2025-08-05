@@ -213,7 +213,7 @@ pub async fn pay(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
     Ok(())
 }
 
-//counter for rob
+//ciunter for rob
 pub async fn rob(
     ctx: poise::Context<'_, Data, Error>,
     target: poise::serenity_prelude::User,
@@ -231,7 +231,7 @@ pub async fn rob(
     }
 
     let target_id = target.id.to_string();
-    let author_id = ctx.author().id.to_string();
+    let robber_id = ctx.author().id.to_string();
 
     sqlx::query("INSERT OR IGNORE INTO users (id, bits) VALUES (?, 0)")
         .bind(&target_id)
@@ -239,7 +239,7 @@ pub async fn rob(
         .await?;
 
     sqlx::query("INSERT OR IGNORE INTO users (id, bits) VALUES (?, 0)")
-        .bind(&author_id)
+        .bind(&robber_id)
         .execute(&ctx.data().db)
         .await?;
 
@@ -249,8 +249,8 @@ pub async fn rob(
         .await?
         .get("bits");
 
-    let author_bits: i64 = sqlx::query("SELECT bits FROM users WHERE id = ?")
-        .bind(&author_id)
+    let au_bits: i64 = sqlx::query("SELECT bits FROM users WHERE id = ?")
+        .bind(&robber_id)
         .fetch_one(&ctx.data().db)
         .await?
         .get("bits");
@@ -265,9 +265,9 @@ pub async fn rob(
         return Ok(());
     }
 
-    let success = rand::thread_rng().gen_bool(0.6); // 60% chance success
+    let success = rand::thread_rng().gen_bool(0.35); // 35% chance success, 65% fail
 
-    let bot_user = ctx.serenity_context().http.get_current_user().await?;
+    let botuser = ctx.serenity_context().http.get_current_user().await?;
     let guild_id = ctx.guild_id().unwrap();
 
     let vmem = guild_id.member(&ctx.serenity_context().http, target.id).await?;
@@ -289,11 +289,11 @@ pub async fn rob(
 
         sqlx::query("UPDATE users SET bits = bits + ? WHERE id = ?")
             .bind(act_s)
-            .bind(&author_id)
+            .bind(&robber_id)
             .execute(&ctx.data().db)
             .await?;
 
-        let success_stories = [
+        let scs_txt = [
             "You successfully scammed the wrong person who turns out to be an old lady for money. Are you happy with what you have done?",
             "You broke into their piggy bank while they were crying. You monster.",
             "You mugged a clown and now the circus is after you.",
@@ -301,7 +301,7 @@ pub async fn rob(
             "You tricked them with a fake charity and ran with the money.",
             "Seems like someone was buying items using your balance. Better go find out who..."
         ];
-        let selected = success_stories[rand::thread_rng().gen_range(0..success_stories.len())];
+        let selected = scs_txt[rand::thread_rng().gen_range(0..scs_txt.len())];
 
         embed_tt = "responses.games.rob.successful";
         embed_desc = selected.to_string();
@@ -309,11 +309,11 @@ pub async fn rob(
         target_ff = format!("<@{}>", target.id);
     } else {
         let loss = rand::thread_rng().gen_range(25..=150);
-        let act_l = std::cmp::min(loss, author_bits);
+        let act_l = std::cmp::min(loss, au_bits);
 
         sqlx::query("UPDATE users SET bits = bits - ? WHERE id = ?")
             .bind(act_l)
-            .bind(&author_id)
+            .bind(&robber_id)
             .execute(&ctx.data().db)
             .await?;
 
@@ -323,14 +323,14 @@ pub async fn rob(
             .execute(&ctx.data().db)
             .await?;
 
-        let fail_stories = [
+        let fail_txt = [
             "You got caught red-handed and had to pay the victim for damages.",
             "The police intervened and fined you on the spot.",
             "Turns out it was a trap. You lost money and your dignity.",
             "The victim fought back and made you drop your wallet.",
             "You tripped during the heist and had to compensate the target."
         ];
-        let selected = fail_stories[rand::thread_rng().gen_range(0..fail_stories.len())];
+        let selected = fail_txt[rand::thread_rng().gen_range(0..fail_txt.len())];
 
         embed_tt = "responses.games.rob.failed";
         embed_desc = selected.to_string();
@@ -346,7 +346,7 @@ pub async fn rob(
         .author(poise::serenity_prelude::CreateEmbedAuthor::new(&au_dn)
             .icon_url(ctx.author().avatar_url().unwrap_or_default()))
         .footer(poise::serenity_prelude::CreateEmbedFooter::new("Bytes")
-            .icon_url(bot_user.avatar_url().unwrap_or_default()))
+            .icon_url(botuser.avatar_url().unwrap_or_default()))
         .color(0x6C3483);
 
     ctx.send(poise::CreateReply::default().embed(embed)).await?;
