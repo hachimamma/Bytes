@@ -389,7 +389,7 @@ pub async fn add(
         .await?
         .get("bits");
 
-    let bot_user = ctx.serenity_context().http.get_current_user().await?;
+    let botuser = ctx.serenity_context().http.get_current_user().await?;
 
     let embed = CreateEmbed::new()
         .author(
@@ -407,7 +407,7 @@ pub async fn add(
         .field("Balance", format!("{} bits", updated_bits), false)
         .footer(
             poise::serenity_prelude::CreateEmbedFooter::new("Bytes")
-                .icon_url(bot_user.avatar_url().unwrap_or_default())
+                .icon_url(botuser.avatar_url().unwrap_or_default())
         )
         .color(0x6C3483);
 
@@ -445,7 +445,7 @@ pub async fn set(
         .execute(&ctx.data().db)
         .await?;
 
-    let bot_user = ctx.serenity_context().http.get_current_user().await?;
+    let botuser = ctx.serenity_context().http.get_current_user().await?;
 
     let embed = CreateEmbed::new()
         .author(
@@ -463,7 +463,7 @@ pub async fn set(
         .field("Balance", format!("{} bits", amount), false)
         .footer(
             poise::serenity_prelude::CreateEmbedFooter::new("Bytes")
-                .icon_url(bot_user.avatar_url().unwrap_or_default())
+                .icon_url(botuser.avatar_url().unwrap_or_default())
         )
         .color(0x6C3483);
 
@@ -500,26 +500,32 @@ pub async fn tax(
 
     let target_id = target.id.to_string();
 
-    // Store per-user tax percent in user_taxes table
     sqlx::query("INSERT OR REPLACE INTO user_taxes (user_id, tax_percent) VALUES (?, ?)")
         .bind(&target_id)
         .bind(percent)
         .execute(&ctx.data().db)
         .await?;
 
-    let bot_user = ctx.serenity_context().http.get_current_user().await?;
+    let botuser = ctx.serenity_context().http.get_current_user().await?;
+    let guild_id = ctx.guild_id().unwrap();
+    let author = guild_id.member(&ctx.serenity_context().http, ctx.author().id).await?;
+    let auname = author.nick.clone().unwrap_or_else(|| ctx.author().global_name.clone().unwrap_or(ctx.author().name.clone()));
 
     let embed = CreateEmbed::new()
         .author(
-            poise::serenity_prelude::CreateEmbedAuthor::new(
-                target.global_name.clone().unwrap_or_else(|| target.name.clone())
-            ).icon_url(target.avatar_url().unwrap_or_default())
+            poise::serenity_prelude::CreateEmbedAuthor::new(&auname)
+                .icon_url(ctx.author().avatar_url().unwrap_or_default())
         )
-        .title("Tax Rate Set")
-        .description(format!("Set **{}%** daily tax for <@{}>.", percent, target.id))
+        .title("Tax Imposed Successfully")
+        .description(format!(
+            "<@{}> imposed **{:.1}%** daily tax on <@{}>",
+            ctx.author().id,
+            percent,
+            target.id
+        ))
         .footer(
             poise::serenity_prelude::CreateEmbedFooter::new("Bytes")
-                .icon_url(bot_user.avatar_url().unwrap_or_default())
+                .icon_url(botuser.avatar_url().unwrap_or_default())
         )
         .color(0x6C3483);
 
@@ -528,7 +534,7 @@ pub async fn tax(
     Ok(())
 }
 
-// daily counter with tax logic
+// daily counter with irs
 pub async fn daily(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
     ensure_user(&ctx).await?;
     let user_id = ctx.author().id.to_string();
@@ -540,24 +546,26 @@ pub async fn daily(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
         .await?
         .get("last_daily");
 
-    if let Some(last_time_str) = last_daily {
-        if let Ok(last_time) = DateTime::parse_from_rfc3339(&last_time_str) {
-            let time_diff = Utc::now().signed_duration_since(last_time);
+    if let Some(lt_str) = last_daily {
+        if let Ok(lt) = DateTime::parse_from_rfc3339(&lt_str) {
+            let time_diff = Utc::now().signed_duration_since(lt);
             if time_diff.num_hours() < 24 {
-                let hours_left = 24 - time_diff.num_hours();
+                let hrs = 24 - time_diff.num_hours();
                 ctx.send(poise::CreateReply::default().embed(
                     CreateEmbed::new()
                         .title("Daily")
-                        .description(&format!("You already claimed your daily! Try again in {} hours. :3", hours_left))
-                        .color(0x6C3483)
+                        .description(format!(
+                            "You've already claimed your daily today.\nTry again in **{} hour(s)**.",
+                            hrs
+                        ))
+                        .color(0x6C3483),
                 )).await?;
                 return Ok(());
             }
         }
     }
 
-    // default reward and tax
-    let full_reward = 100;
+    let full_rwd = rand::thread_rng().gen_range(50..=150);
     let tax_percent: f64 = sqlx::query("SELECT tax_percent FROM user_taxes WHERE user_id = ?")
         .bind(&user_id)
         .fetch_optional(&ctx.data().db)
@@ -565,25 +573,42 @@ pub async fn daily(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
         .map(|row: sqlx::sqlite::SqliteRow| row.get("tax_percent"))
         .unwrap_or(0.0);
 
-    let taxed_amount = ((full_reward as f64) * (tax_percent / 100.0)).round() as i64;
-    let net_reward = full_reward - taxed_amount;
+    let tax_amt = ((full_rwd as f64) * (tax_percent / 100.0)).round() as i64;
+    let net_rwd = full_rwd - tax_amt;
 
     sqlx::query("UPDATE users SET bits = bits + ?, last_daily = ? WHERE id = ?")
-        .bind(net_reward)
+        .bind(net_rwd)
         .bind(&now)
         .bind(&user_id)
         .execute(&ctx.data().db)
         .await?;
 
-    ctx.send(poise::CreateReply::default().embed(
-        CreateEmbed::new()
-            .title("Daily")
-            .description(&format!(
-                "You claimed your daily reward of {} Bits!\n> Tax: {}%\n> Deducted: {}\n> Final: {} Bits :D",
-                full_reward, tax_percent, taxed_amount, net_reward
-            ))
-            .color(0x6C3483)
-    )).await?;
+    let botuser = ctx.serenity_context().http.get_current_user().await?;
+    let guild_id = ctx.guild_id().unwrap();
+    let member = guild_id.member(&ctx.serenity_context().http, ctx.author().id).await?;
+    let auname = member.nick.clone().unwrap_or_else(|| ctx.author().global_name.clone().unwrap_or(ctx.author().name.clone()));
+
+    let mut embed = CreateEmbed::new()
+        .author(
+            poise::serenity_prelude::CreateEmbedAuthor::new(&auname)
+                .icon_url(ctx.author().avatar_url().unwrap_or_default())
+        )
+        .title("Daily Reward");
+
+    embed = embed
+        .field("Amount", format!("{} Bits", net_rwd), true)
+        .field("Next Reward", "In 1 day", true);
+
+    if tax_percent > 0.0 {
+        embed = embed.field("Amount Taxed", format!("{} Bits", tax_amt), true);
+    }
+
+    embed = embed.footer(
+        poise::serenity_prelude::CreateEmbedFooter::new("Bytes")
+            .icon_url(botuser.avatar_url().unwrap_or_default())
+    ).color(0x6C3483);
+
+    ctx.send(poise::CreateReply::default().embed(embed)).await?;
 
     Ok(())
 }
@@ -600,9 +625,9 @@ pub async fn weekly(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
         .await?
         .get("last_weekly");
     
-    if let Some(last_time_str) = last_weekly {
-        if let Ok(last_time) = DateTime::parse_from_rfc3339(&last_time_str) {
-            let time_diff = Utc::now().signed_duration_since(last_time);
+    if let Some(lt_str) = last_weekly {
+        if let Ok(lt) = DateTime::parse_from_rfc3339(&lt_str) {
+            let time_diff = Utc::now().signed_duration_since(lt);
             if time_diff.num_days() < 7 {
                 let days_left = 7 - time_diff.num_days();
                 ctx.send(poise::CreateReply::default().embed(
@@ -639,9 +664,9 @@ pub async fn monthly(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> 
         .await?
         .get("last_monthly");
 
-    if let Some(last_time_str) = last_monthly {
-        if let Ok(last_time) = DateTime::parse_from_rfc3339(&last_time_str) {
-            let time_diff = Utc::now().signed_duration_since(last_time);
+    if let Some(lt_str) = last_monthly {
+        if let Ok(lt) = DateTime::parse_from_rfc3339(&lt_str) {
+            let time_diff = Utc::now().signed_duration_since(lt);
             if time_diff.num_days() < 30 {
                 let days_left = 30 - time_diff.num_days();
                 ctx.send(poise::CreateReply::default().embed(
@@ -684,9 +709,9 @@ pub async fn yearly(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
         .await?
         .get("last_yearly");
     
-    if let Some(last_time_str) = last_yearly {
-        if let Ok(last_time) = DateTime::parse_from_rfc3339(&last_time_str) {
-            let time_diff = Utc::now().signed_duration_since(last_time);
+    if let Some(lt_str) = last_yearly {
+        if let Ok(lt) = DateTime::parse_from_rfc3339(&lt_str) {
+            let time_diff = Utc::now().signed_duration_since(lt);
             if time_diff.num_days() < 365 {
                 let days_left = 365 - time_diff.num_days();
                 ctx.send(poise::CreateReply::default().embed(
