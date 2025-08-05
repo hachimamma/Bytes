@@ -6,6 +6,7 @@ use poise::serenity_prelude::CreateEmbed;
 use poise::serenity_prelude::{CreateEmbedAuthor, CreateEmbedFooter, CreateActionRow, CreateButton, ButtonStyle};
 use num_format::{Locale, ToFormattedString};
 use rand::Rng;
+use serenity::all::Mentionable;
 use sqlx::Row;
 
 //to check for core prevelege
@@ -30,21 +31,24 @@ async fn ensure_user(ctx: &poise::Context<'_, Data, Error>) -> Result<(), Error>
     Ok(())
 }
 
-//handle for balance 
+//handle for balance
 pub async fn balance(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
     ensure_user(&ctx).await?;
+    
+    let botav = ctx.cache().current_user().avatar_url().unwrap_or_default();
+    
     let bits: i64 = sqlx::query("SELECT bits FROM users WHERE id = ?")
         .bind(ctx.author().id.to_string())
         .fetch_one(&ctx.data().db)
         .await?
         .get("bits");
-
+    
     ctx.send(poise::CreateReply::default().embed(
         CreateEmbed::new()
             .author(CreateEmbedAuthor::new(ctx.author().name.clone()).icon_url(ctx.author().avatar_url().unwrap_or_default()))
             .title("Balance")
             .description(format!("{} bits", bits.to_formatted_string(&Locale::en)))
-            .footer(CreateEmbedFooter::new("Bits"))
+            .footer(CreateEmbedFooter::new("Bytes").icon_url(botav))
             .thumbnail("https://cdn.discordapp.com/assets/2c21aeda16de354ba5334551a883b481.png")
             .color(0x5865F2)
     )).await?;
@@ -425,9 +429,9 @@ pub async fn rob(
         ];
         let selected = scs_txt[rand::thread_rng().gen_range(0..scs_txt.len())];
 
-        embed_tt = "responses.games.rob.successful";
+        embed_tt = "Robbery Successful";
         embed_desc = selected.to_string();
-        amt_ff = format!("{} points", act_s);
+        amt_ff = format!("{} bits", act_s);
         target_ff = format!("<@{}>", target.id);
     } else {
         let loss = rand::thread_rng().gen_range(25..=150);
@@ -454,9 +458,9 @@ pub async fn rob(
         ];
         let selected = fail_txt[rand::thread_rng().gen_range(0..fail_txt.len())];
 
-        embed_tt = "responses.games.rob.failed";
+        embed_tt = "Robbery Failed";
         embed_desc = selected.to_string();
-        amt_ff = format!("{} points", act_l);
+        amt_ff = format!("{} bits", act_l);
         target_ff = format!("<@{}>", target.id);
     }
 
@@ -535,6 +539,61 @@ pub async fn add(
 
     ctx.send(poise::CreateReply::default().embed(embed)).await?;
 
+    Ok(())
+}
+
+// handle for the subtract cmd
+pub async fn subtract(
+    ctx: poise::Context<'_, Data, Error>,
+    target: poise::serenity_prelude::User,
+    amount: i64,
+) -> Result<(), Error> {
+    if !is_admin(&ctx).await {
+        ctx.send(poise::CreateReply::default().embed(
+            CreateEmbed::new()
+                .title("Subtract")
+                .description("Only admins can use this command!")
+        )).await?;
+        return Ok(());
+    }
+    
+    ensure_user(&ctx).await?;
+    
+    let botav = ctx.cache().current_user().avatar_url().unwrap_or_default();
+    
+    let target_id = target.id.to_string();
+    sqlx::query("INSERT OR IGNORE INTO users (id, bits) VALUES (?, 0)")
+        .bind(&target_id)
+        .execute(&ctx.data().db)
+        .await?;
+    
+    sqlx::query("UPDATE users SET bits = bits - ? WHERE id = ?")
+        .bind(amount)
+        .bind(&target_id)
+        .execute(&ctx.data().db)
+        .await?;
+    
+    let newbal: i64 = sqlx::query("SELECT bits FROM users WHERE id = ?")
+        .bind(&target_id)
+        .fetch_one(&ctx.data().db)
+        .await?
+        .get("bits");
+    
+    ctx.send(poise::CreateReply::default().embed(
+        CreateEmbed::new()
+            .author(CreateEmbedAuthor::new(target.name.clone()).icon_url(target.avatar_url().unwrap_or_default()))
+            .title("Transaction Complete")
+            .description(format!(
+                "{} subtracted {} bits from {}\n\n**Balance**\n{} bits", 
+                ctx.author().mention(),
+                amount,
+                target.mention(),
+                newbal
+            ))
+            .footer(CreateEmbedFooter::new("Bytes").icon_url(botav))
+            .color(0x5865F2)
+    )).await?;
+    
     Ok(())
 }
 
@@ -735,73 +794,106 @@ pub async fn daily(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
     Ok(())
 }
 
-//weekly counter for all, pls fix time if u can
+// weekly counter with member nickname UI
 pub async fn weekly(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
     ensure_user(&ctx).await?;
     let user_id = ctx.author().id.to_string();
     let now = Utc::now().to_rfc3339();
-    
+
     let last_weekly: Option<String> = sqlx::query("SELECT last_weekly FROM users WHERE id = ?")
         .bind(&user_id)
         .fetch_one(&ctx.data().db)
         .await?
         .get("last_weekly");
-    
+
+    let guild_id = ctx.guild_id().unwrap();
+    let member = guild_id.member(&ctx.serenity_context().http, ctx.author().id).await?;
+    let nickname = member.nick.clone().unwrap_or_else(|| ctx.author().name.clone());
+    let bot_user = ctx.serenity_context().http.get_current_user().await?;
+
     if let Some(lt_str) = last_weekly {
         if let Ok(lt) = DateTime::parse_from_rfc3339(&lt_str) {
             let time_diff = Utc::now().signed_duration_since(lt);
             if time_diff.num_days() < 7 {
-                let days_left = 7 - time_diff.num_days();
-                ctx.send(poise::CreateReply::default().embed(
-                    CreateEmbed::new().title("Weekly").description(&format!("You already claimed your weekly! Try again in {} days. :3", days_left))
-                )).await?;
+                let embed = CreateEmbed::new()
+                    .author(
+                        poise::serenity_prelude::CreateEmbedAuthor::new(nickname)
+                            .icon_url(ctx.author().avatar_url().unwrap_or_default())
+                    )
+                    .title("Weekly Reward")
+                    .description("You have already claimed your weekly reward!\n\n**Try again in 7 days.**")
+                    .footer(
+                        poise::serenity_prelude::CreateEmbedFooter::new("Bytes")
+                            .icon_url(bot_user.avatar_url().unwrap_or_default())
+                    )
+                    .color(0x7289DA);
+
+                ctx.send(poise::CreateReply::default().embed(embed)).await?;
                 return Ok(());
             }
         }
     }
-    
+
     let reward = 500;
+
     sqlx::query("UPDATE users SET bits = bits + ?, last_weekly = ? WHERE id = ?")
         .bind(reward)
         .bind(&now)
         .bind(&user_id)
         .execute(&ctx.data().db)
         .await?;
-    
-    ctx.send(poise::CreateReply::default().embed(
-        CreateEmbed::new().title("Weekly").description(&format!("You claimed your weekly reward of {} Bits! :P", reward))
-    )).await?;
+
+    let embed = CreateEmbed::new()
+        .author(
+            poise::serenity_prelude::CreateEmbedAuthor::new(nickname)
+                .icon_url(ctx.author().avatar_url().unwrap_or_default())
+        )
+        .title("Weekly Reward")
+        .field("Amount", format!("{} Bits", reward), true)
+        .field("Next Reward", "In 7 days", true)
+        .footer(
+            poise::serenity_prelude::CreateEmbedFooter::new("Bytes")
+                .icon_url(bot_user.avatar_url().unwrap_or_default())
+        )
+        .color(0x7289DA);
+
+    ctx.send(poise::CreateReply::default().embed(embed)).await?;
     Ok(())
 }
 
-//monthly counter
+//handle for monthly
 pub async fn monthly(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
     ensure_user(&ctx).await?;
+    
+    let botav = ctx.cache().current_user().avatar_url().unwrap_or_default();
     let user_id = ctx.author().id.to_string();
     let now = Utc::now().to_rfc3339();
-
+    
     let last_monthly: Option<String> = sqlx::query("SELECT last_monthly FROM users WHERE id = ?")
         .bind(&user_id)
         .fetch_one(&ctx.data().db)
         .await?
         .get("last_monthly");
-
+    
     if let Some(lt_str) = last_monthly {
         if let Ok(lt) = DateTime::parse_from_rfc3339(&lt_str) {
             let time_diff = Utc::now().signed_duration_since(lt);
             if time_diff.num_days() < 30 {
                 let days_left = 30 - time_diff.num_days();
+                
                 ctx.send(poise::CreateReply::default().embed(
                     CreateEmbed::new()
-                        .title("Monthly")
-                        .description(&format!("You already claimed your monthly! Try again in {} days. :3", days_left))
-                        .color(0x7289DA) // Dark purple
+                        .author(CreateEmbedAuthor::new(ctx.author().name.clone()).icon_url(ctx.author().avatar_url().unwrap_or_default()))
+                        .title("Monthly Claim")
+                        .description(format!("You already claimed your monthly reward!\n\n**Try again in {} days**", days_left))
+                        .footer(CreateEmbedFooter::new("Points").icon_url(botav))
+                        .color(0x7289DA)
                 )).await?;
                 return Ok(());
             }
         }
     }
-
+    
     let reward = 2000;
     sqlx::query("UPDATE users SET bits = bits + ?, last_monthly = ? WHERE id = ?")
         .bind(reward)
@@ -809,51 +901,112 @@ pub async fn monthly(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> 
         .bind(&user_id)
         .execute(&ctx.data().db)
         .await?;
-
+    
+    let new_balance: i64 = sqlx::query("SELECT bits FROM users WHERE id = ?")
+        .bind(&user_id)
+        .fetch_one(&ctx.data().db)
+        .await?
+        .get("bits");
+    
     ctx.send(poise::CreateReply::default().embed(
         CreateEmbed::new()
-            .title("Monthly")
-            .description(&format!("You claimed your monthly reward of {} Bits! 8)", reward))
+            .author(CreateEmbedAuthor::new(ctx.author().name.clone()).icon_url(ctx.author().avatar_url().unwrap_or_default()))
+            .title("Monthly Reward Claimed")
+            .description(format!(
+                "You claimed your monthly reward of **{} points**!\n\n**Balance**\n{} points", 
+                reward,
+                new_balance
+            ))
+            .footer(CreateEmbedFooter::new("Points").icon_url(botav))
             .color(0x7289DA)
     )).await?;
+    
     Ok(())
 }
 
-//pls fix this thing, its really bad logic
+//handle for yearly
 pub async fn yearly(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
     ensure_user(&ctx).await?;
-    let user_id = ctx.author().id.to_string();
-    let now = Utc::now().to_rfc3339();
-    
+
+    let author = ctx.author();
+    let user_id = author.id.to_string();
+    let now = Utc::now();
+
+    let bot_user = ctx.serenity_context().http.get_current_user().await?;
+    let guild_id = ctx.guild_id().unwrap_or_default();
+
+    let server_name = guild_id
+        .member(&ctx.serenity_context().http, author.id)
+        .await
+        .ok()
+        .and_then(|m| m.nick)
+        .unwrap_or_else(|| author.name.clone());
+
     let last_yearly: Option<String> = sqlx::query("SELECT last_yearly FROM users WHERE id = ?")
         .bind(&user_id)
         .fetch_one(&ctx.data().db)
         .await?
         .get("last_yearly");
-    
+
     if let Some(lt_str) = last_yearly {
-        if let Ok(lt) = DateTime::parse_from_rfc3339(&lt_str) {
-            let time_diff = Utc::now().signed_duration_since(lt);
-            if time_diff.num_days() < 365 {
-                let days_left = 365 - time_diff.num_days();
+        if let Ok(last_claim) = DateTime::parse_from_rfc3339(&lt_str) {
+            let next_claim = last_claim.with_timezone(&Utc) + chrono::Duration::days(365);
+            if now < next_claim {
+                let remaining = next_claim - now;
+                let days = remaining.num_days();
+                let hours = remaining.num_hours() % 24;
+                let time_msg = if days > 0 {
+                    if hours > 0 {
+                        format!("{} days and {} hours", days, hours)
+                    } else {
+                        format!("{} days", days)
+                    }
+                } else {
+                    format!("{} hours", remaining.num_hours())
+                };
+
                 ctx.send(poise::CreateReply::default().embed(
-                    CreateEmbed::new().title("Yearly").description(&format!("You already claimed your yearly! Try again in {} days. :3", days_left))
+                    CreateEmbed::new()
+                        .author(CreateEmbedAuthor::new(server_name.clone())
+                            .icon_url(author.avatar_url().unwrap_or_default()))
+                        .title("Yearly Claim")
+                        .description(format!("You already claimed your yearly reward!\n\n**Try again in {}**", time_msg))
+                        .footer(CreateEmbedFooter::new("Bytes")
+                            .icon_url(bot_user.avatar_url().unwrap_or_default()))
+                        .color(0x7289DA)
                 )).await?;
                 return Ok(());
             }
         }
     }
-    
-    let reward = 25000;
+
+    let reward = 25_000;
+    let now_rfc = now.to_rfc3339();
     sqlx::query("UPDATE users SET bits = bits + ?, last_yearly = ? WHERE id = ?")
         .bind(reward)
-        .bind(&now)
+        .bind(&now_rfc)
         .bind(&user_id)
-        .execute(&ctx.data().db)
-        .await?;
-    
+        .execute(&ctx.data().db).await?;
+
+    let new_balance: i64 = sqlx::query("SELECT bits FROM users WHERE id = ?")
+        .bind(&user_id)
+        .fetch_one(&ctx.data().db).await?
+        .get("bits");
+
     ctx.send(poise::CreateReply::default().embed(
-        CreateEmbed::new().title("Yearly").description(&format!("You claimed your yearly reward of {} Bits! ^_^", reward))
+        CreateEmbed::new()
+            .author(CreateEmbedAuthor::new(server_name)
+                .icon_url(author.avatar_url().unwrap_or_default()))
+            .title("Yearly Reward Claimed")
+            .description(format!(
+                "You claimed your yearly reward of **{} Bits**!\n\n**Balance:** {}\n", 
+                reward,
+                new_balance
+            ))
+            .footer(CreateEmbedFooter::new("Bytes")
+                .icon_url(bot_user.avatar_url().unwrap_or_default()))
+            .color(0x7289DA)
     )).await?;
+
     Ok(())
 }

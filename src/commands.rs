@@ -250,28 +250,7 @@ pub async fn subtract(
     #[description = "User to subtract from"] target: poise::serenity_prelude::User,
     #[description = "Bits to remove"] amt: i64
 ) -> Result<(), Error> {
-    if !crate::handlers::is_admin(&ctx).await {
-        ctx.send(poise::CreateReply::default().embed(
-            CreateEmbed::new().title("Subtract").description("Only admins can use this command!")
-        )).await?;
-        return Ok(());
-    }
-    
-    let target_id = target.id.to_string();
-    sqlx::query("INSERT OR IGNORE INTO users (id, bits) VALUES (?, 0)")
-        .bind(&target_id)
-        .execute(&ctx.data().db)
-        .await?;
-    
-    sqlx::query("UPDATE users SET bits = bits - ? WHERE id = ?")
-        .bind(amt)
-        .bind(&target_id)
-        .execute(&ctx.data().db).await?;
-    
-    ctx.send(poise::CreateReply::default().embed(
-        CreateEmbed::new().title("Subtract").description(&format!("Subtracted {} Bits from {}!", amt, target.name))
-    )).await?;
-    Ok(())
+    crate::handlers::subtract(ctx, target, amt).await
 }
 
 #[poise::command(slash_command)]
