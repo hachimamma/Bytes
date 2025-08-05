@@ -3,7 +3,7 @@
 use crate::{Data, Error};
 use chrono::{DateTime, Utc};
 use poise::serenity_prelude::CreateEmbed;
-use poise::serenity_prelude::{CreateEmbedAuthor, CreateEmbedFooter};
+use poise::serenity_prelude::{CreateEmbedAuthor, CreateEmbedFooter, CreateActionRow, CreateButton, ButtonStyle};
 use num_format::{Locale, ToFormattedString};
 use rand::Rng;
 use sqlx::Row;
@@ -30,7 +30,7 @@ async fn ensure_user(ctx: &poise::Context<'_, Data, Error>) -> Result<(), Error>
     Ok(())
 }
 
-//sql query for balance binding (WIP)
+//handle for balance 
 pub async fn balance(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
     ensure_user(&ctx).await?;
     let bits: i64 = sqlx::query("SELECT bits FROM users WHERE id = ?")
@@ -46,31 +46,60 @@ pub async fn balance(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> 
             .description(format!("{} bits", bits.to_formatted_string(&Locale::en)))
             .footer(CreateEmbedFooter::new("Bits"))
             .thumbnail("https://cdn.discordapp.com/assets/2c21aeda16de354ba5334551a883b481.png")
-            .color(0x5865F2) // Discord blurple
+            .color(0x5865F2)
     )).await?;
     Ok(())
 }
 
-
-//sql query for lb binding (WIP)
+// handle for lb
 pub async fn leaderboard(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
     let rows = sqlx::query("SELECT id, bits FROM users ORDER BY bits DESC LIMIT 10")
         .fetch_all(&ctx.data().db)
         .await?;
-
-    let mut msg = String::new();
+    
+    let mut desc = String::new();
+    
     for (i, row) in rows.iter().enumerate() {
         let id: String = row.get("id");
         let bits: i64 = row.get("bits");
-        msg.push_str(&format!("{}. <@{}> - {} Bits\n", i + 1, id, bits));
+        
+        desc.push_str(&format!(
+            "{}.) <@{}> - **{} bits**\n", 
+            i + 1, 
+            id, 
+            bits
+        ));
     }
+    
+    if desc.is_empty() {
+        desc = "No users found on the leaderboard yet! :3".to_string();
+    }
+    
+    desc.push_str("\nPage 1/1");
+    
+    let components = vec![CreateActionRow::Buttons(vec![
+        CreateButton::new("lb_back")
+            .label("Back")
+            .style(ButtonStyle::Secondary)
+            .disabled(true),
+        CreateButton::new("lb_next")
+            .label("Next")
+            .style(ButtonStyle::Secondary)
+            .disabled(true),
+    ])];
 
-    ctx.send(poise::CreateReply::default().embed(
-        CreateEmbed::new()
-            .title("Top Sigmas Leaderboard")
-            .description(&msg)
-            .color(0x6C3483)
-    )).await?;
+    ctx.send(poise::CreateReply::default()
+        .embed(
+            CreateEmbed::new()
+                .title("Top Sigmas")
+                .description(&desc)
+                .color(0x5865F2)
+                .footer(CreateEmbedFooter::new("Bits Leaderboard"))
+                .timestamp(chrono::Utc::now())
+        )
+        .components(components)
+    ).await?;
+    
     Ok(())
 }
 
@@ -141,6 +170,7 @@ pub async fn coinflip(
     )).await?;
     Ok(())
 }
+
 //handle for dice (A)
 pub async fn dice(
     ctx: poise::Context<'_, Data, Error>,
@@ -206,14 +236,106 @@ pub async fn dice(
     Ok(())
 }
 
-pub async fn pay(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
-    ctx.send(poise::CreateReply::default().embed(
-        CreateEmbed::new().title("Pay").description("Pay command needs to be updated with params. :3")
-    )).await?;
+pub async fn pay(
+    ctx: poise::Context<'_, Data, Error>,
+    recipient: serenity::all::User,
+    amt: i64,
+) -> Result<(), Error> {
+    if amt <= 0 {
+        ctx.send(poise::CreateReply::default().embed(
+            CreateEmbed::new()
+                .title("Pay")
+                .description("Amount must be positive :3.")
+                .color(0x6C3483),
+        )).await?;
+        return Ok(());
+    }
+
+    let sender = ctx.author();
+    let sender_id = sender.id.to_string();
+    let rec_id = recipient.id.to_string();
+
+    sqlx::query("INSERT OR IGNORE INTO users (id, bits) VALUES (?, 0)")
+        .bind(&sender_id)
+        .execute(&ctx.data().db)
+        .await?;
+    sqlx::query("INSERT OR IGNORE INTO users (id, bits) VALUES (?, 0)")
+        .bind(&rec_id)
+        .execute(&ctx.data().db)
+        .await?;
+
+    let sender_bits: i64 = sqlx::query("SELECT bits FROM users WHERE id = ?")
+        .bind(&sender_id)
+        .fetch_one(&ctx.data().db)
+        .await?
+        .get("bits");
+
+    if sender_bits < amt {
+        ctx.send(poise::CreateReply::default().embed(
+            CreateEmbed::new()
+                .title("Pay")
+                .description("You don't have enough Bits!")
+                .color(0x6C3483),
+        )).await?;
+        return Ok(());
+    }
+
+    sqlx::query("UPDATE users SET bits = bits - ? WHERE id = ?")
+        .bind(amt)
+        .bind(&sender_id)
+        .execute(&ctx.data().db)
+        .await?;
+    sqlx::query("UPDATE users SET bits = bits + ? WHERE id = ?")
+        .bind(amt)
+        .bind(&rec_id)
+        .execute(&ctx.data().db)
+        .await?;
+
+    let au_ub: i64 = sqlx::query("SELECT bits FROM users WHERE id = ?")
+        .bind(&sender_id)
+        .fetch_one(&ctx.data().db)
+        .await?
+        .get("bits");
+
+    let rec_ub: i64 = sqlx::query("SELECT bits FROM users WHERE id = ?")
+        .bind(&rec_id)
+        .fetch_one(&ctx.data().db)
+        .await?
+        .get("bits");
+
+    let botuser = ctx.serenity_context().http.get_current_user().await?;
+    let guild_id = ctx.guild_id().unwrap();
+    let recmem = guild_id.member(&ctx.serenity_context().http, recipient.id).await?;
+    let rec_nick = recmem.nick.clone().unwrap_or_else(|| recipient.name.clone());
+
+    let send_gl = sender.global_name.clone().unwrap_or_else(|| sender.name.clone());
+    let rec_gl = recipient.global_name.clone().unwrap_or_else(|| recipient.name.clone());
+
+    let embed = CreateEmbed::new()
+        .author(CreateEmbedAuthor::new(&rec_nick)
+            .icon_url(recipient.avatar_url().unwrap_or_default()))
+        .title("Transaction Complete")
+        .description(format!("<@{}> paid {} Bits to <@{}>", sender.id, amt, recipient.id))
+        .field(
+            format!("**{}'s balance:**", send_gl),
+            format!("{} Bits", au_ub),
+            false,
+        )
+        .field(
+            format!("**{}'s balance:**", rec_gl),
+            format!("{} Bits", rec_ub),
+            false,
+        )
+        .footer(CreateEmbedFooter::new("Bytes")
+            .icon_url(botuser.avatar_url().unwrap_or_default()))
+        .color(0x6C3483);
+
+    ctx.send(poise::CreateReply::default().embed(embed)).await?;
+
     Ok(())
 }
 
-//ciunter for rob
+//counter for rob
 pub async fn rob(
     ctx: poise::Context<'_, Data, Error>,
     target: poise::serenity_prelude::User,
@@ -265,12 +387,12 @@ pub async fn rob(
         return Ok(());
     }
 
-    let success = rand::thread_rng().gen_bool(0.35); // 35% chance success, 65% fail
+    let success = rand::thread_rng().gen_bool(0.35);
 
     let botuser = ctx.serenity_context().http.get_current_user().await?;
     let guild_id = ctx.guild_id().unwrap();
 
-    let vmem = guild_id.member(&ctx.serenity_context().http, target.id).await?;
+    let _vmem = guild_id.member(&ctx.serenity_context().http, target.id).await?;
     let au_mem = guild_id.member(&ctx.serenity_context().http, ctx.author().id).await?;
 
     let au_dn = au_mem.nick.clone().unwrap_or_else(|| ctx.author().global_name.clone().unwrap_or(ctx.author().name.clone()));

@@ -1,5 +1,4 @@
 use crate::{Data, Error};
-use sqlx::Row;
 use poise::serenity_prelude::{
     CreateEmbed, CreateSelectMenu, CreateSelectMenuKind, CreateSelectMenuOption, 
     CreateActionRow, ComponentInteractionCollector, ReactionType
@@ -218,51 +217,7 @@ pub async fn pay(
     #[description = "User to send bits to"] recipient: poise::serenity_prelude::User,
     #[description = "Amount to send"] amt: i64
 ) -> Result<(), Error> {
-    if amt <= 0 {
-        ctx.send(poise::CreateReply::default().embed(
-            CreateEmbed::new().title("Pay").description("Amount must be positive :3.")
-        )).await?;
-        return Ok(());
-    }
-
-    let send_id = ctx.author().id.to_string();
-    let recipient_id = recipient.id.to_string();
-    
-    sqlx::query("INSERT OR IGNORE INTO users (id, bits) VALUES (?, 0)")
-        .bind(&send_id)
-        .execute(&ctx.data().db)
-        .await?;
-    sqlx::query("INSERT OR IGNORE INTO users (id, bits) VALUES (?, 0)")
-        .bind(&recipient_id)
-        .execute(&ctx.data().db)
-        .await?;
-    
-    let sender_bits: i64 = sqlx::query("SELECT bits FROM users WHERE id = ?")
-        .bind(&send_id)
-        .fetch_one(&ctx.data().db)
-        .await?
-        .get("bits");
-    
-    if sender_bits < amt {
-        ctx.send(poise::CreateReply::default().embed(
-            CreateEmbed::new().title("Pay").description("You don't have enough Bits!")
-        )).await?;
-        return Ok(());
-    }
-    
-    sqlx::query("UPDATE users SET bits = bits - ? WHERE id = ?")
-        .bind(amt)
-        .bind(&send_id)
-        .execute(&ctx.data().db).await?;
-    sqlx::query("UPDATE users SET bits = bits + ? WHERE id = ?")
-        .bind(amt)
-        .bind(&recipient_id)
-        .execute(&ctx.data().db).await?;
-
-    ctx.send(poise::CreateReply::default().embed(
-        CreateEmbed::new().title("Pay").description(&format!("You sent {} Bits to {}!", amt, recipient.name))
-    )).await?;
-    Ok(())
+    crate::handlers::pay(ctx, recipient, amt).await
 }
 
 #[poise::command(slash_command)]
