@@ -213,7 +213,7 @@ pub async fn pay(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
     Ok(())
 }
 
-//ciunter for rob
+//counter for rob
 pub async fn rob(
     ctx: poise::Context<'_, Data, Error>,
     target: poise::serenity_prelude::User,
@@ -225,15 +225,21 @@ pub async fn rob(
             CreateEmbed::new()
                 .title("Rob")
                 .description("You cannot rob yourself dummy. :3")
-                .color(0x6C3483)
+                .color(0x6C3483),
         )).await?;
         return Ok(());
     }
 
     let target_id = target.id.to_string();
+    let author_id = ctx.author().id.to_string();
 
     sqlx::query("INSERT OR IGNORE INTO users (id, bits) VALUES (?, 0)")
         .bind(&target_id)
+        .execute(&ctx.data().db)
+        .await?;
+
+    sqlx::query("INSERT OR IGNORE INTO users (id, bits) VALUES (?, 0)")
+        .bind(&author_id)
         .execute(&ctx.data().db)
         .await?;
 
@@ -243,35 +249,108 @@ pub async fn rob(
         .await?
         .get("bits");
 
+    let author_bits: i64 = sqlx::query("SELECT bits FROM users WHERE id = ?")
+        .bind(&author_id)
+        .fetch_one(&ctx.data().db)
+        .await?
+        .get("bits");
+
     if target_bits < 200 {
         ctx.send(poise::CreateReply::default().embed(
             CreateEmbed::new()
                 .title("Rob")
                 .description("Target must have at least 200 Bits to be robbed. :3")
-                .color(0x6C3483)
+                .color(0x6C3483),
         )).await?;
         return Ok(());
     }
 
-    let stolen = rand::thread_rng().gen_range(50..=200);
-    let act_s = std::cmp::min(stolen, target_bits);
+    let success = rand::thread_rng().gen_bool(0.6); // 60% chance success
 
-    sqlx::query("UPDATE users SET bits = bits - ? WHERE id = ?")
-        .bind(act_s)
-        .bind(&target_id)
-        .execute(&ctx.data().db).await?;
+    let bot_user = ctx.serenity_context().http.get_current_user().await?;
+    let guild_id = ctx.guild_id().unwrap();
 
-    sqlx::query("UPDATE users SET bits = bits + ? WHERE id = ?")
-        .bind(act_s)
-        .bind(ctx.author().id.to_string())
-        .execute(&ctx.data().db).await?;
+    let vmem = guild_id.member(&ctx.serenity_context().http, target.id).await?;
+    let au_mem = guild_id.member(&ctx.serenity_context().http, ctx.author().id).await?;
 
-    ctx.send(poise::CreateReply::default().embed(
-        CreateEmbed::new()
-            .title("Rob")
-            .description(&format!("You stole {} Bits from {}. :>", act_s, target.display_name()))
-            .color(0x6C3483)
-    )).await?;
+    let au_dn = au_mem.nick.clone().unwrap_or_else(|| ctx.author().global_name.clone().unwrap_or(ctx.author().name.clone()));
+
+    let (embed_tt, embed_desc, amt_ff, target_ff);
+
+    if success {
+        let stolen = rand::thread_rng().gen_range(50..=200);
+        let act_s = std::cmp::min(stolen, target_bits);
+
+        sqlx::query("UPDATE users SET bits = bits - ? WHERE id = ?")
+            .bind(act_s)
+            .bind(&target_id)
+            .execute(&ctx.data().db)
+            .await?;
+
+        sqlx::query("UPDATE users SET bits = bits + ? WHERE id = ?")
+            .bind(act_s)
+            .bind(&author_id)
+            .execute(&ctx.data().db)
+            .await?;
+
+        let success_stories = [
+            "You successfully scammed the wrong person who turns out to be an old lady for money. Are you happy with what you have done?",
+            "You broke into their piggy bank while they were crying. You monster.",
+            "You mugged a clown and now the circus is after you.",
+            "You stole from a ninja, but somehow got away... this time.",
+            "You tricked them with a fake charity and ran with the money.",
+            "Seems like someone was buying items using your balance. Better go find out who..."
+        ];
+        let selected = success_stories[rand::thread_rng().gen_range(0..success_stories.len())];
+
+        embed_tt = "responses.games.rob.successful";
+        embed_desc = selected.to_string();
+        amt_ff = format!("{} points", act_s);
+        target_ff = format!("<@{}>", target.id);
+    } else {
+        let loss = rand::thread_rng().gen_range(25..=150);
+        let act_l = std::cmp::min(loss, author_bits);
+
+        sqlx::query("UPDATE users SET bits = bits - ? WHERE id = ?")
+            .bind(act_l)
+            .bind(&author_id)
+            .execute(&ctx.data().db)
+            .await?;
+
+        sqlx::query("UPDATE users SET bits = bits + ? WHERE id = ?")
+            .bind(act_l)
+            .bind(&target_id)
+            .execute(&ctx.data().db)
+            .await?;
+
+        let fail_stories = [
+            "You got caught red-handed and had to pay the victim for damages.",
+            "The police intervened and fined you on the spot.",
+            "Turns out it was a trap. You lost money and your dignity.",
+            "The victim fought back and made you drop your wallet.",
+            "You tripped during the heist and had to compensate the target."
+        ];
+        let selected = fail_stories[rand::thread_rng().gen_range(0..fail_stories.len())];
+
+        embed_tt = "responses.games.rob.failed";
+        embed_desc = selected.to_string();
+        amt_ff = format!("{} points", act_l);
+        target_ff = format!("<@{}>", target.id);
+    }
+
+    let embed = CreateEmbed::new()
+        .title(embed_tt)
+        .description(embed_desc)
+        .field("Amount", amt_ff, true)
+        .field("Victim", target_ff, true)
+        .author(poise::serenity_prelude::CreateEmbedAuthor::new(&au_dn)
+            .icon_url(ctx.author().avatar_url().unwrap_or_default()))
+        .footer(poise::serenity_prelude::CreateEmbedFooter::new("Bytes")
+            .icon_url(bot_user.avatar_url().unwrap_or_default()))
+        .color(0x6C3483);
+
+    ctx.send(poise::CreateReply::default().embed(embed)).await?;
+
     Ok(())
 }
 
