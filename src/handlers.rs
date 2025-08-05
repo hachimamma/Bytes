@@ -246,7 +246,7 @@ pub async fn pay(
             CreateEmbed::new()
                 .title("Pay")
                 .description("Amount must be positive :3.")
-                .color(0x6C3483),
+                .color(0x7289DA),
         )).await?;
         return Ok(());
     }
@@ -275,7 +275,7 @@ pub async fn pay(
             CreateEmbed::new()
                 .title("Pay")
                 .description("You don't have enough Bits!")
-                .color(0x6C3483),
+                .color(0x7289DA),
         )).await?;
         return Ok(());
     }
@@ -328,7 +328,7 @@ pub async fn pay(
         )
         .footer(CreateEmbedFooter::new("Bytes")
             .icon_url(botuser.avatar_url().unwrap_or_default()))
-        .color(0x6C3483);
+        .color(0x7289DA);
 
     ctx.send(poise::CreateReply::default().embed(embed)).await?;
 
@@ -347,7 +347,7 @@ pub async fn rob(
             CreateEmbed::new()
                 .title("Rob")
                 .description("You cannot rob yourself dummy. :3")
-                .color(0x6C3483),
+                .color(0x7289DA),
         )).await?;
         return Ok(());
     }
@@ -382,7 +382,7 @@ pub async fn rob(
             CreateEmbed::new()
                 .title("Rob")
                 .description("Target must have at least 200 Bits to be robbed. :3")
-                .color(0x6C3483),
+                .color(0x7289DA),
         )).await?;
         return Ok(());
     }
@@ -469,7 +469,7 @@ pub async fn rob(
             .icon_url(ctx.author().avatar_url().unwrap_or_default()))
         .footer(poise::serenity_prelude::CreateEmbedFooter::new("Bytes")
             .icon_url(botuser.avatar_url().unwrap_or_default()))
-        .color(0x6C3483);
+        .color(0x7289DA);
 
     ctx.send(poise::CreateReply::default().embed(embed)).await?;
 
@@ -487,7 +487,7 @@ pub async fn add(
             CreateEmbed::new()
                 .title("Add")
                 .description("Only admins can use this command. :3")
-                .color(0x6C3483),
+                .color(0x7289DA),
         )).await?;
         return Ok(());
     }
@@ -531,7 +531,7 @@ pub async fn add(
             poise::serenity_prelude::CreateEmbedFooter::new("Bytes")
                 .icon_url(botuser.avatar_url().unwrap_or_default())
         )
-        .color(0x6C3483);
+        .color(0x7289DA);
 
     ctx.send(poise::CreateReply::default().embed(embed)).await?;
 
@@ -549,7 +549,7 @@ pub async fn set(
             CreateEmbed::new()
                 .title("Set")
                 .description("Only admins can use this command. :3")
-                .color(0x6C3483),
+                .color(0x7289DA),
         )).await?;
         return Ok(());
     }
@@ -587,7 +587,7 @@ pub async fn set(
             poise::serenity_prelude::CreateEmbedFooter::new("Bytes")
                 .icon_url(botuser.avatar_url().unwrap_or_default())
         )
-        .color(0x6C3483);
+        .color(0x7289DA);
 
     ctx.send(poise::CreateReply::default().embed(embed)).await?;
 
@@ -605,7 +605,7 @@ pub async fn tax(
             CreateEmbed::new()
                 .title("Tax")
                 .description("Only admins can use this command. :>")
-                .color(0x6C3483),
+                .color(0x7289DA),
         )).await?;
         return Ok(());
     }
@@ -615,7 +615,7 @@ pub async fn tax(
             CreateEmbed::new()
                 .title("Tax")
                 .description("Tax percent must be between 0 and 100. :3")
-                .color(0x6C3483),
+                .color(0x7289DA),
         )).await?;
         return Ok(());
     }
@@ -649,7 +649,7 @@ pub async fn tax(
             poise::serenity_prelude::CreateEmbedFooter::new("Bytes")
                 .icon_url(botuser.avatar_url().unwrap_or_default())
         )
-        .color(0x6C3483);
+        .color(0x7289DA);
 
     ctx.send(poise::CreateReply::default().embed(embed)).await?;
 
@@ -680,7 +680,7 @@ pub async fn daily(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
                             "You've already claimed your daily today.\nTry again in **{} hour(s)**.",
                             hrs
                         ))
-                        .color(0x6C3483),
+                        .color(0x7289DA),
                 )).await?;
                 return Ok(());
             }
@@ -728,7 +728,7 @@ pub async fn daily(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
     embed = embed.footer(
         poise::serenity_prelude::CreateEmbedFooter::new("Bytes")
             .icon_url(botuser.avatar_url().unwrap_or_default())
-    ).color(0x6C3483);
+    ).color(0x7289DA);
 
     ctx.send(poise::CreateReply::default().embed(embed)).await?;
 
@@ -795,7 +795,7 @@ pub async fn monthly(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> 
                     CreateEmbed::new()
                         .title("Monthly")
                         .description(&format!("You already claimed your monthly! Try again in {} days. :3", days_left))
-                        .color(0x6C3483) // Dark purple
+                        .color(0x7289DA) // Dark purple
                 )).await?;
                 return Ok(());
             }
@@ -814,7 +814,7 @@ pub async fn monthly(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> 
         CreateEmbed::new()
             .title("Monthly")
             .description(&format!("You claimed your monthly reward of {} Bits! 8)", reward))
-            .color(0x6C3483)
+            .color(0x7289DA)
     )).await?;
     Ok(())
 }
