@@ -354,52 +354,125 @@ pub async fn rob(
     Ok(())
 }
 
-//add func only for admins with admin_check above
-pub async fn add(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
+// add func for admins
+pub async fn add(
+    ctx: poise::Context<'_, Data, Error>,
+    target: poise::serenity_prelude::User,
+    amount: u64,
+) -> Result<(), Error> {
     if !is_admin(&ctx).await {
         ctx.send(poise::CreateReply::default().embed(
-            CreateEmbed::new().title("Add").description("Only admins can use this command. :3")
+            CreateEmbed::new()
+                .title("Add")
+                .description("Only admins can use this command. :3")
+                .color(0x6C3483),
         )).await?;
         return Ok(());
     }
-    
-    ctx.send(poise::CreateReply::default().embed(
-        CreateEmbed::new().title("Add").description("add command is handled in commands.rs now (the proj is WIP)")
-    )).await?;
+
+    let target_id = target.id.to_string();
+
+    sqlx::query("INSERT OR IGNORE INTO users (id, bits) VALUES (?, 0)")
+        .bind(&target_id)
+        .execute(&ctx.data().db)
+        .await?;
+
+    sqlx::query("UPDATE users SET bits = bits + ? WHERE id = ?")
+        .bind(amount as i64)
+        .bind(&target_id)
+        .execute(&ctx.data().db)
+        .await?;
+
+    let updated_bits: i64 = sqlx::query("SELECT bits FROM users WHERE id = ?")
+        .bind(&target_id)
+        .fetch_one(&ctx.data().db)
+        .await?
+        .get("bits");
+
+    let bot_user = ctx.serenity_context().http.get_current_user().await?;
+
+    let embed = CreateEmbed::new()
+        .author(
+            poise::serenity_prelude::CreateEmbedAuthor::new(
+                target.global_name.clone().unwrap_or_else(|| target.name.clone())
+            ).icon_url(target.avatar_url().unwrap_or_default())
+        )
+        .title("Transaction Complete")
+        .description(format!(
+            "<@{}> added {} bits to <@{}>",
+            ctx.author().id,
+            amount,
+            target.id
+        ))
+        .field("Balance", format!("{} bits", updated_bits), false)
+        .footer(
+            poise::serenity_prelude::CreateEmbedFooter::new("Bytes")
+                .icon_url(bot_user.avatar_url().unwrap_or_default())
+        )
+        .color(0x6C3483);
+
+    ctx.send(poise::CreateReply::default().embed(embed)).await?;
+
     Ok(())
 }
 
-//sub func for admins same as add but -
-pub async fn subtract(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
+// set func for setting balance
+pub async fn set(
+    ctx: poise::Context<'_, Data, Error>,
+    target: poise::serenity_prelude::User,
+    amount: u64,
+) -> Result<(), Error> {
     if !is_admin(&ctx).await {
         ctx.send(poise::CreateReply::default().embed(
-            CreateEmbed::new().title("Subtract").description("Only admins can use this command. :3")
+            CreateEmbed::new()
+                .title("Set")
+                .description("Only admins can use this command. :3")
+                .color(0x6C3483),
         )).await?;
         return Ok(());
     }
-    
-    ctx.send(poise::CreateReply::default().embed(
-        CreateEmbed::new().title("Subtract").description("subtract command is handled in commands.rs now (the proj is WIP)")
-    )).await?;
+
+    let target_id = target.id.to_string();
+
+    sqlx::query("INSERT OR IGNORE INTO users (id, bits) VALUES (?, 0)")
+        .bind(&target_id)
+        .execute(&ctx.data().db)
+        .await?;
+
+    sqlx::query("UPDATE users SET bits = ? WHERE id = ?")
+        .bind(amount as i64)
+        .bind(&target_id)
+        .execute(&ctx.data().db)
+        .await?;
+
+    let bot_user = ctx.serenity_context().http.get_current_user().await?;
+
+    let embed = CreateEmbed::new()
+        .author(
+            poise::serenity_prelude::CreateEmbedAuthor::new(
+                target.global_name.clone().unwrap_or_else(|| target.name.clone())
+            ).icon_url(target.avatar_url().unwrap_or_default())
+        )
+        .title("Balance Set Successfully")
+        .description(format!(
+            "<@{}> set <@{}>'s balance to {} bits.",
+            ctx.author().id,
+            target.id,
+            amount
+        ))
+        .field("Balance", format!("{} bits", amount), false)
+        .footer(
+            poise::serenity_prelude::CreateEmbedFooter::new("Bytes")
+                .icon_url(bot_user.avatar_url().unwrap_or_default())
+        )
+        .color(0x6C3483);
+
+    ctx.send(poise::CreateReply::default().embed(embed)).await?;
+
     Ok(())
 }
 
-//set func for setting bal
-pub async fn set(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
-    if !is_admin(&ctx).await {
-        ctx.send(poise::CreateReply::default().embed(
-            CreateEmbed::new().title("Set").description("Only admins can use this command. :3")
-        )).await?;
-        return Ok(());
-    }
-    
-    ctx.send(poise::CreateReply::default().embed(
-        CreateEmbed::new().title("Set").description("set command is handled in commands.rs now (the proj is wip)")
-    )).await?;
-    Ok(())
-}
-
-//tax counter for admins
+// tax setter for admins (per user)
 pub async fn tax(
     ctx: poise::Context<'_, Data, Error>,
     target: poise::serenity_prelude::User,
@@ -407,50 +480,55 @@ pub async fn tax(
 ) -> Result<(), Error> {
     if !is_admin(&ctx).await {
         ctx.send(poise::CreateReply::default().embed(
-            CreateEmbed::new().title("Tax").description("Only admins can use this command. :>")
+            CreateEmbed::new()
+                .title("Tax")
+                .description("Only admins can use this command. :>")
+                .color(0x6C3483),
         )).await?;
         return Ok(());
     }
-    
+
     if percent < 0.0 || percent > 100.0 {
         ctx.send(poise::CreateReply::default().embed(
-            CreateEmbed::new().title("Tax").description("Tax percent must be between 0 and 100. :3")
+            CreateEmbed::new()
+                .title("Tax")
+                .description("Tax percent must be between 0 and 100. :3")
+                .color(0x6C3483),
         )).await?;
         return Ok(());
     }
-    
+
     let target_id = target.id.to_string();
-    
-    sqlx::query("INSERT OR IGNORE INTO users (id, bits) VALUES (?, 0)")
+
+    // Store per-user tax percent in user_taxes table
+    sqlx::query("INSERT OR REPLACE INTO user_taxes (user_id, tax_percent) VALUES (?, ?)")
         .bind(&target_id)
+        .bind(percent)
         .execute(&ctx.data().db)
         .await?;
-    
-    let balance: i64 = sqlx::query("SELECT bits FROM users WHERE id = ?")
-        .bind(&target_id)
-        .fetch_one(&ctx.data().db)
-        .await?
-        .get("bits");
-    
-    let tax_amount = ((balance as f64 / 100.0) * percent) as i64;
-    let new_balance = balance - tax_amount;
-    
-    sqlx::query("UPDATE users SET bits = ? WHERE id = ?")
-        .bind(new_balance)
-        .bind(&target_id)
-        .execute(&ctx.data().db).await?;
-    
-    ctx.send(poise::CreateReply::default().embed(
-        CreateEmbed::new().title("Tax").description(&format!(
-            "Taxed {}: {}%\nTax: {} Bits\nNew Balance: {} Bits. :3", 
-            target.display_name(), percent, tax_amount, new_balance
-        ))
-    )).await?;
+
+    let bot_user = ctx.serenity_context().http.get_current_user().await?;
+
+    let embed = CreateEmbed::new()
+        .author(
+            poise::serenity_prelude::CreateEmbedAuthor::new(
+                target.global_name.clone().unwrap_or_else(|| target.name.clone())
+            ).icon_url(target.avatar_url().unwrap_or_default())
+        )
+        .title("Tax Rate Set")
+        .description(format!("Set **{}%** daily tax for <@{}>.", percent, target.id))
+        .footer(
+            poise::serenity_prelude::CreateEmbedFooter::new("Bytes")
+                .icon_url(bot_user.avatar_url().unwrap_or_default())
+        )
+        .color(0x6C3483);
+
+    ctx.send(poise::CreateReply::default().embed(embed)).await?;
+
     Ok(())
 }
 
-
-//daily counter
+// daily counter with tax logic
 pub async fn daily(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
     ensure_user(&ctx).await?;
     let user_id = ctx.author().id.to_string();
@@ -471,16 +549,27 @@ pub async fn daily(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
                     CreateEmbed::new()
                         .title("Daily")
                         .description(&format!("You already claimed your daily! Try again in {} hours. :3", hours_left))
-                        .color(0x6C3483) // Dark purple
+                        .color(0x6C3483)
                 )).await?;
                 return Ok(());
             }
         }
     }
 
-    let reward = 100;
+    // default reward and tax
+    let full_reward = 100;
+    let tax_percent: f64 = sqlx::query("SELECT tax_percent FROM user_taxes WHERE user_id = ?")
+        .bind(&user_id)
+        .fetch_optional(&ctx.data().db)
+        .await?
+        .map(|row: sqlx::sqlite::SqliteRow| row.get("tax_percent"))
+        .unwrap_or(0.0);
+
+    let taxed_amount = ((full_reward as f64) * (tax_percent / 100.0)).round() as i64;
+    let net_reward = full_reward - taxed_amount;
+
     sqlx::query("UPDATE users SET bits = bits + ?, last_daily = ? WHERE id = ?")
-        .bind(reward)
+        .bind(net_reward)
         .bind(&now)
         .bind(&user_id)
         .execute(&ctx.data().db)
@@ -489,9 +578,13 @@ pub async fn daily(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
     ctx.send(poise::CreateReply::default().embed(
         CreateEmbed::new()
             .title("Daily")
-            .description(&format!("You claimed your daily reward of {} Bits! :D", reward))
-            .color(0x6C3483) // Dark purple
+            .description(&format!(
+                "You claimed your daily reward of {} Bits!\n> Tax: {}%\n> Deducted: {}\n> Final: {} Bits :D",
+                full_reward, tax_percent, taxed_amount, net_reward
+            ))
+            .color(0x6C3483)
     )).await?;
+
     Ok(())
 }
 

@@ -283,31 +283,10 @@ pub async fn yearly(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
 #[poise::command(slash_command)]
 pub async fn add(
     ctx: poise::Context<'_, Data, Error>,
-    #[description = "User to credit"] target: poise::serenity_prelude::User,
-    #[description = "Bits to add"] amt: i64
+    #[description = "User to credit"] target: serenity::all::User,
+    #[description = "Bits to add"] amt: i64,
 ) -> Result<(), Error> {
-    if !crate::handlers::is_admin(&ctx).await {
-        ctx.send(poise::CreateReply::default().embed(
-            CreateEmbed::new().title("Add").description("Only admins can use this command!")
-        )).await?;
-        return Ok(());
-    }
-    
-    let target_id = target.id.to_string();
-    sqlx::query("INSERT OR IGNORE INTO users (id, bits) VALUES (?, 0)")
-        .bind(&target_id)
-        .execute(&ctx.data().db)
-        .await?;
-    
-    sqlx::query("UPDATE users SET bits = bits + ? WHERE id = ?")
-        .bind(amt)
-        .bind(&target_id)
-        .execute(&ctx.data().db).await?;
-    
-    ctx.send(poise::CreateReply::default().embed(
-        CreateEmbed::new().title("Add").description(&format!("Added {} Bits to {}!", amt, target.name))
-    )).await?;
-    Ok(())
+    crate::handlers::add(ctx, target, amt.try_into().unwrap()).await
 }
 
 #[poise::command(slash_command)]
@@ -346,28 +325,7 @@ pub async fn set(
     #[description = "User to set balance"] target: poise::serenity_prelude::User,
     #[description = "New balance"] amt: i64
 ) -> Result<(), Error> {
-    if !crate::handlers::is_admin(&ctx).await {
-        ctx.send(poise::CreateReply::default().embed(
-            CreateEmbed::new().title("Set").description("Only admins can use this command!")
-        )).await?;
-        return Ok(());
-    }
-    
-    let target_id = target.id.to_string();
-    sqlx::query("INSERT OR IGNORE INTO users (id, bits) VALUES (?, 0)")
-        .bind(&target_id)
-        .execute(&ctx.data().db)
-        .await?;
-    
-    sqlx::query("UPDATE users SET bits = ? WHERE id = ?")
-        .bind(amt)
-        .bind(&target_id)
-        .execute(&ctx.data().db).await?;
-    
-    ctx.send(poise::CreateReply::default().embed(
-        CreateEmbed::new().title("Set").description(&format!("Set {}'s balance to {} Bits!", target.name, amt))
-    )).await?;
-    Ok(())
+    crate::handlers::set(ctx, target, amt.try_into().unwrap()).await
 }
 
 #[poise::command(slash_command)]
