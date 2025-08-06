@@ -81,7 +81,7 @@ pub async fn leaderboard(ctx: poise::Context<'_, Data, Error>) -> Result<(), Err
     
     desc.push_str("\nPage 1/1");
     
-    let components = vec![CreateActionRow::Buttons(vec![
+    let comps = vec![CreateActionRow::Buttons(vec![
         CreateButton::new("lb_back")
             .label("Back")
             .style(ButtonStyle::Secondary)
@@ -101,7 +101,7 @@ pub async fn leaderboard(ctx: poise::Context<'_, Data, Error>) -> Result<(), Err
                 .footer(CreateEmbedFooter::new("Bits Leaderboard"))
                 .timestamp(chrono::Utc::now())
         )
-        .components(components)
+        .components(comps)
     ).await?;
     
     Ok(())
@@ -902,7 +902,7 @@ pub async fn monthly(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> 
         .execute(&ctx.data().db)
         .await?;
     
-    let new_balance: i64 = sqlx::query("SELECT bits FROM users WHERE id = ?")
+    let newbal: i64 = sqlx::query("SELECT bits FROM users WHERE id = ?")
         .bind(&user_id)
         .fetch_one(&ctx.data().db)
         .await?
@@ -915,7 +915,7 @@ pub async fn monthly(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> 
             .description(format!(
                 "You claimed your monthly reward of **{} points**!\n\n**Balance**\n{} points", 
                 reward,
-                new_balance
+                newbal
             ))
             .footer(CreateEmbedFooter::new("Points").icon_url(botav))
             .color(0x7289DA)
@@ -988,7 +988,7 @@ pub async fn yearly(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
         .bind(&user_id)
         .execute(&ctx.data().db).await?;
 
-    let new_balance: i64 = sqlx::query("SELECT bits FROM users WHERE id = ?")
+    let newbal: i64 = sqlx::query("SELECT bits FROM users WHERE id = ?")
         .bind(&user_id)
         .fetch_one(&ctx.data().db).await?
         .get("bits");
@@ -1001,12 +1001,132 @@ pub async fn yearly(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
             .description(format!(
                 "You claimed your yearly reward of **{} Bits**!\n\n**Balance:** {}\n", 
                 reward,
-                new_balance
+                newbal
             ))
             .footer(CreateEmbedFooter::new("Bytes")
                 .icon_url(bot_user.avatar_url().unwrap_or_default()))
             .color(0x7289DA)
     )).await?;
 
+    Ok(())
+}
+
+// handle for shop
+pub async fn shop(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
+    ensure_user(&ctx).await?;
+    
+    let botav = ctx.cache().current_user().avatar_url().unwrap_or_default();
+    
+    let userbal: i64 = sqlx::query("SELECT bits FROM users WHERE id = ?")
+        .bind(ctx.author().id.to_string())
+        .fetch_one(&ctx.data().db)
+        .await?
+        .get("bits");
+    
+    let shop_desc = format!(
+        "**Your Balance:** {} points\n\n**Available Items:**",
+        userbal
+    );
+    
+    let fields = vec![
+        ("Item1", "**Price:** 500 points\n*A cool gaming item*", true),
+        ("Item2", "**Price:** 1,000 points\n*An artistic masterpiece*", true),
+        ("Item3", "**Price:** 2,500 points\n*A rare diamond item*", true),
+    ];
+    
+    let comps = vec![CreateActionRow::Buttons(vec![
+        CreateButton::new("shop_buy_item1")
+            .label("Buy Item1 (500)")
+            .style(ButtonStyle::Success),
+        CreateButton::new("shop_buy_item2")
+            .label("Buy Item2 (1,000)")
+            .style(ButtonStyle::Success),
+        CreateButton::new("shop_buy_item3")
+            .label("Buy Item3 (2,500)")
+            .style(ButtonStyle::Success),
+    ])];
+    
+    ctx.send(poise::CreateReply::default()
+        .embed(
+            CreateEmbed::new()
+                .author(CreateEmbedAuthor::new(
+                    format!("{}'s Shop", ctx.author().display_name())
+                ).icon_url(ctx.author().avatar_url().unwrap_or_default()))
+                .title("Points Shop")
+                .description(&shop_desc)
+                .fields(fields)
+                .footer(CreateEmbedFooter::new("Click the buttons below to purchase items")
+                    .icon_url(botav))
+                .color(0x5865F2) // Discord blurple for better integration
+                .thumbnail(ctx.author().avatar_url().unwrap_or_default())
+        )
+        .components(comps)
+    ).await?;
+    
+    Ok(())
+}
+
+// handle for shop backend
+pub async fn shop_back(
+    ctx: &poise::serenity_prelude::Context,
+    interaction: &poise::serenity_prelude::ComponentInteraction,
+    data: &Data,
+    item_id: &str,
+) -> Result<(), Error> {
+    let user_id = interaction.user.id.to_string();
+    
+    let (itemnm, item_price) = match item_id {
+        "item1" => ("Item1", 500),
+        "item2" => ("Item2", 1000),
+        "item3" => ("Item3", 2500),
+        _ => return Ok(()),
+    };
+    
+    let userbal: i64 = sqlx::query("SELECT bits FROM users WHERE id = ?")
+        .bind(&user_id)
+        .fetch_one(&data.db)
+        .await?
+        .get("bits");
+    
+    if userbal < item_price {
+        let need = item_price - userbal;
+        interaction.create_response(&ctx.http, poise::serenity_prelude::CreateInteractionResponse::Message(
+            poise::serenity_prelude::CreateInteractionResponseMessage::new()
+                .embed(CreateEmbed::new()
+                    .title("Insufficient Points")
+                    .description(format!(
+                        "You don't have enough points to buy **{}**!\n\n**Required:** {} points\n**You have:** {} points\n**Need:** {} more points",
+                        itemnm, item_price, userbal, need
+                    ))
+                    .color(0xED4245) // Discord red
+                    .thumbnail(interaction.user.avatar_url().unwrap_or_default())
+                )
+                .ephemeral(true)
+        )).await?;
+        return Ok(());
+    }
+    
+    sqlx::query("UPDATE users SET bits = bits - ? WHERE id = ?")
+        .bind(item_price)
+        .bind(&user_id)
+        .execute(&data.db)
+        .await?;
+    
+    let newbal = userbal - item_price;
+    
+    interaction.create_response(&ctx.http, poise::serenity_prelude::CreateInteractionResponse::Message(
+        poise::serenity_prelude::CreateInteractionResponseMessage::new()
+            .embed(CreateEmbed::new()
+                .title("Purchase Successful!")
+                .description(format!(
+                    "You successfully purchased **{}**!\n\n**Cost:** {} points\n**New Balance:** {} points\n\nThank you for your purchase!",
+                    itemnm, item_price, newbal
+                ))
+                .color(0x57F287)
+                .thumbnail(interaction.user.avatar_url().unwrap_or_default())
+            )
+            .ephemeral(true)
+    )).await?;
+    
     Ok(())
 }

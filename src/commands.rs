@@ -270,3 +270,8 @@ pub async fn tax(
 ) -> Result<(), Error> {
     crate::handlers::tax(ctx, target, percentage).await
 }
+
+#[poise::command(slash_command)]
+pub async fn shop(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
+    crate::handlers::shop(ctx).await
+}

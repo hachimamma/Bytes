@@ -88,6 +88,18 @@ impl EventHandler for Handler {
         
         drop(tracker);
     }
+
+    // Add interaction handler for shop buttons
+    async fn interaction_create(&self, ctx: Context, interaction: serenity::Interaction) {
+        if let serenity::Interaction::Component(component_interaction) = interaction {
+            if component_interaction.data.custom_id.starts_with("shop_buy_") {
+                let item_id = component_interaction.data.custom_id.strip_prefix("shop_buy_").unwrap();
+                if let Err(e) = handlers::shop_back(&ctx, &component_interaction, &self.data, item_id).await {
+                    eprintln!("Error handling shop purchase: {:?}", e);
+                }
+            }
+        }
+    }
 }
 
 fn rwd(msg_len: u32, word: u32, msgt: u32) -> i64 {
@@ -146,10 +158,23 @@ async fn main() -> Result<(), Error> {
     dotenv().ok();
     
     let token = env::var("DISCORD_TOKEN")?;
+    
+    // Get the project root directory
+    let current_dir = std::env::current_dir()?;
+    let project_root = if current_dir.ends_with("shop") {
+        current_dir.parent().unwrap().to_path_buf()
+    } else {
+        current_dir
+    };
+    
+    // Set working directory to project root
+    std::env::set_current_dir(&project_root)?;
+    
     let db_url = env::var("DB_URL").unwrap_or("sqlite:bytes.db".into());
     
     println!("database URL: {}", &db_url);
     println!("current directory: {:?}", std::env::current_dir());
+    println!("project root: {:?}", &project_root);
     
     let db = SqlitePoolOptions::new()
         .connect(&db_url)
@@ -177,7 +202,7 @@ async fn main() -> Result<(), Error> {
     let options = poise::FrameworkOptions {
         commands: vec![
             daily(), balance(), leaderboard(), rob(), coinflip(),
-            tax(), set(), pay(), monthly(), weekly(), add(), dice(), subtract(), yearly()
+            tax(), set(), pay(), monthly(), weekly(), add(), dice(), subtract(), yearly(), shop()
         ],
         ..Default::default()
     };
