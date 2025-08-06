@@ -4,6 +4,7 @@ use crate::{Data, Error};
 use chrono::{DateTime, Utc};
 use poise::serenity_prelude::CreateEmbed;
 use poise::serenity_prelude::{CreateEmbedAuthor, CreateEmbedFooter, CreateActionRow, CreateButton, ButtonStyle};
+use poise::serenity_prelude::CacheHttp;
 use num_format::{Locale, ToFormattedString};
 use rand::Rng;
 use serenity::all::Mentionable;
@@ -1011,7 +1012,7 @@ pub async fn yearly(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
     Ok(())
 }
 
-// handle for shop
+// Handle for shop command
 pub async fn shop(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
     ensure_user(&ctx).await?;
     
@@ -1023,7 +1024,7 @@ pub async fn shop(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
         .await?
         .get("bits");
     
-    let shop_desc = format!(
+    let shop_description = format!(
         "**Your Balance:** {} points\n\n**Available Items:**",
         userbal
     );
@@ -1053,11 +1054,11 @@ pub async fn shop(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
                     format!("{}'s Shop", ctx.author().display_name())
                 ).icon_url(ctx.author().avatar_url().unwrap_or_default()))
                 .title("Points Shop")
-                .description(&shop_desc)
+                .description(&shop_description)
                 .fields(fields)
                 .footer(CreateEmbedFooter::new("Click the buttons below to purchase items")
                     .icon_url(botav))
-                .color(0x5865F2) // Discord blurple for better integration
+                .color(0x5865F2) 
                 .thumbnail(ctx.author().avatar_url().unwrap_or_default())
         )
         .components(comps)
@@ -1066,7 +1067,7 @@ pub async fn shop(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
     Ok(())
 }
 
-// handle for shop backend
+//handle for shop backend
 pub async fn shop_back(
     ctx: &poise::serenity_prelude::Context,
     interaction: &poise::serenity_prelude::ComponentInteraction,
@@ -1088,18 +1089,27 @@ pub async fn shop_back(
         .await?
         .get("bits");
     
+    let botav = ctx.cache()
+        .as_ref()
+        .and_then(|cache| cache.current_user().avatar_url())
+        .unwrap_or_default();
+
     if userbal < item_price {
         let need = item_price - userbal;
         interaction.create_response(&ctx.http, poise::serenity_prelude::CreateInteractionResponse::Message(
             poise::serenity_prelude::CreateInteractionResponseMessage::new()
                 .embed(CreateEmbed::new()
+                    .author(CreateEmbedAuthor::new(
+                        interaction.user.display_name().to_string()
+                    ).icon_url(interaction.user.avatar_url().unwrap_or_default()))
                     .title("Insufficient Points")
                     .description(format!(
                         "You don't have enough points to buy **{}**!\n\n**Required:** {} points\n**You have:** {} points\n**Need:** {} more points",
                         itemnm, item_price, userbal, need
                     ))
-                    .color(0xED4245) // Discord red
-                    .thumbnail(interaction.user.avatar_url().unwrap_or_default())
+                    .color(0xED4245)
+                    .footer(CreateEmbedFooter::new("Bytes")
+                        .icon_url(botav))
                 )
                 .ephemeral(true)
         )).await?;
@@ -1113,19 +1123,22 @@ pub async fn shop_back(
         .await?;
     
     let newbal = userbal - item_price;
-    
+
     interaction.create_response(&ctx.http, poise::serenity_prelude::CreateInteractionResponse::Message(
         poise::serenity_prelude::CreateInteractionResponseMessage::new()
             .embed(CreateEmbed::new()
+                .author(CreateEmbedAuthor::new(
+                    interaction.user.display_name().to_string()
+                ).icon_url(interaction.user.avatar_url().unwrap_or_default()))
                 .title("Purchase Successful!")
                 .description(format!(
                     "You successfully purchased **{}**!\n\n**Cost:** {} points\n**New Balance:** {} points\n\nThank you for your purchase!",
                     itemnm, item_price, newbal
                 ))
                 .color(0x57F287)
-                .thumbnail(interaction.user.avatar_url().unwrap_or_default())
+                .footer(CreateEmbedFooter::new("Bytes")
+                    .icon_url(botav))
             )
-            .ephemeral(true)
     )).await?;
     
     Ok(())
