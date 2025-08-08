@@ -9,6 +9,7 @@ use num_format::{Locale, ToFormattedString};
 use rand::Rng;
 use serenity::all::Mentionable;
 use sqlx::Row;
+use serde::{Deserialize, Serialize};
 
 //to check for core prevelege
 pub(crate) async fn is_admin(ctx: &poise::Context<'_, Data, Error>) -> bool {
@@ -1012,6 +1013,22 @@ pub async fn yearly(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
     Ok(())
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ShopItem {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub price: i64,
+    pub tags: Vec<String>, // buy_once, badge, medal, trophy, legacy, etc.
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UserItem {
+    pub item_id: String,
+    pub quantity: i32,
+    pub purchased_at: String,
+}
+
 // Handle for shop command
 pub async fn shop(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
     ensure_user(&ctx).await?;
@@ -1024,28 +1041,71 @@ pub async fn shop(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
         .await?
         .get("bits");
     
+    // Get all available items from database
+    let items_raw = sqlx::query("SELECT id, name, description, price, tags FROM shop_items ORDER BY price ASC LIMIT 3")
+        .fetch_all(&ctx.data().db)
+        .await?;
+    
+    let items: Vec<ShopItem> = items_raw.into_iter().map(|row| ShopItem {
+        id: row.get("id"),
+        name: row.get("name"),
+        description: row.get("description"),
+        price: row.get("price"),
+        tags: serde_json::from_str(&row.get::<String, _>("tags")).unwrap_or_default(),
+    }).collect();
+
+    if items.is_empty() {
+        ctx.send(poise::CreateReply::default()
+            .embed(
+                CreateEmbed::new()
+                    .title("Shop Temporarily Closed")
+                    .description("No items are currently available. Please check back later!")
+                    .color(0xED4245)
+            )
+        ).await?;
+        return Ok(());
+    }
+    
     let shop_description = format!(
         "**Your Balance:** {} points\n\n**Available Items:**",
         userbal
     );
     
-    let fields = vec![
-        ("Item1", "**Price:** 500 points\n*A cool gaming item*", true),
-        ("Item2", "**Price:** 1,000 points\n*An artistic masterpiece*", true),
-        ("Item3", "**Price:** 2,500 points\n*A rare diamond item*", true),
-    ];
+    // Create fields dynamically from database items
+    let mut fields = Vec::new();
+    let mut buttons = Vec::new();
     
-    let comps = vec![CreateActionRow::Buttons(vec![
-        CreateButton::new("shop_buy_item1")
-            .label("Buy Item1 (500)")
-            .style(ButtonStyle::Success),
-        CreateButton::new("shop_buy_item2")
-            .label("Buy Item2 (1,000)")
-            .style(ButtonStyle::Success),
-        CreateButton::new("shop_buy_item3")
-            .label("Buy Item3 (2,500)")
-            .style(ButtonStyle::Success),
-    ])];
+    for (index, item) in items.iter().enumerate() {
+        // Create tag badges
+        let tags_display = if !item.tags.is_empty() {
+            let mut tags_pretty = Vec::new();
+            for tag in &item.tags {
+                match tag.as_str() {
+                    "buy_once" => tags_pretty.push("Buy Once"),
+                    _ => tags_pretty.push(tag), // fallback
+                }
+            }
+            format!("\n**Tags:** {}", tags_pretty.join(", "))
+        } else {
+            String::new()
+        };
+
+        fields.push((
+            format!("{}", item.name),
+            format!("**Price:** {} points\n*{}*{}", item.price, item.description, tags_display),
+            true
+        ));
+
+        if index < 3 {
+            buttons.push(
+                CreateButton::new(format!("shop_buy_{}", item.id))
+                    .label(format!("Buy {} ({})", item.name, item.price))
+                    .style(ButtonStyle::Success)
+            );
+        }
+    }
+    
+    let comps = vec![CreateActionRow::Buttons(buttons)];
     
     ctx.send(poise::CreateReply::default()
         .embed(
@@ -1067,7 +1127,7 @@ pub async fn shop(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
     Ok(())
 }
 
-//handle for shop backend
+// Handle for shop backend
 pub async fn shop_back(
     ctx: &poise::serenity_prelude::Context,
     interaction: &poise::serenity_prelude::ComponentInteraction,
@@ -1076,11 +1136,21 @@ pub async fn shop_back(
 ) -> Result<(), Error> {
     let user_id = interaction.user.id.to_string();
     
-    let (itemnm, item_price) = match item_id {
-        "item1" => ("Item1", 500),
-        "item2" => ("Item2", 1000),
-        "item3" => ("Item3", 2500),
-        _ => return Ok(()),
+    // Get item from database
+    let item_row = sqlx::query("SELECT id, name, description, price, tags FROM shop_items WHERE id = ?")
+        .bind(item_id)
+        .fetch_optional(&data.db)
+        .await?;
+    
+    let item = match item_row {
+        Some(row) => ShopItem {
+            id: row.get("id"),
+            name: row.get("name"),
+            description: row.get("description"),
+            price: row.get("price"),
+            tags: serde_json::from_str(&row.get::<String, _>("tags")).unwrap_or_default(),
+        },
+        None => return Ok(()), // Item doesn't exist
     };
     
     let userbal: i64 = sqlx::query("SELECT bits FROM users WHERE id = ?")
@@ -1094,8 +1164,39 @@ pub async fn shop_back(
         .and_then(|cache| cache.current_user().avatar_url())
         .unwrap_or_default();
 
-    if userbal < item_price {
-        let need = item_price - userbal;
+    // Check if item has buy_once tag and user already owns it
+    if item.tags.contains(&"buy_once".to_string()) {
+        let already_owned: i64 = sqlx::query("SELECT COUNT(*) as count FROM user_items WHERE user_id = ? AND item_id = ?")
+            .bind(&user_id)
+            .bind(&item.id)
+            .fetch_one(&data.db)
+            .await?
+            .get("count");
+        
+        if already_owned > 0 {
+            interaction.create_response(&ctx.http, poise::serenity_prelude::CreateInteractionResponse::Message(
+                poise::serenity_prelude::CreateInteractionResponseMessage::new()
+                    .embed(CreateEmbed::new()
+                        .author(CreateEmbedAuthor::new(
+                            interaction.user.display_name().to_string()
+                        ).icon_url(interaction.user.avatar_url().unwrap_or_default()))
+                        .title("Item Already Owned")
+                        .description(format!(
+                            "You already own **{}**!\n\nThis is a limited item that can only be purchased once.",
+                            item.name
+                        ))
+                        .color(0xED4245)
+                        .footer(CreateEmbedFooter::new("Bytes")
+                            .icon_url(botav))
+                    )
+                    .ephemeral(true)
+            )).await?;
+            return Ok(());
+        }
+    }
+
+    if userbal < item.price {
+        let need = item.price - userbal;
         interaction.create_response(&ctx.http, poise::serenity_prelude::CreateInteractionResponse::Message(
             poise::serenity_prelude::CreateInteractionResponseMessage::new()
                 .embed(CreateEmbed::new()
@@ -1105,7 +1206,7 @@ pub async fn shop_back(
                     .title("Insufficient Points")
                     .description(format!(
                         "You don't have enough points to buy **{}**!\n\n**Required:** {} points\n**You have:** {} points\n**Need:** {} more points",
-                        itemnm, item_price, userbal, need
+                        item.name, item.price, userbal, need
                     ))
                     .color(0xED4245)
                     .footer(CreateEmbedFooter::new("Bytes")
@@ -1116,13 +1217,23 @@ pub async fn shop_back(
         return Ok(());
     }
     
+    // Deduct points
     sqlx::query("UPDATE users SET bits = bits - ? WHERE id = ?")
-        .bind(item_price)
+        .bind(item.price)
         .bind(&user_id)
         .execute(&data.db)
         .await?;
     
-    let newbal = userbal - item_price;
+    // Add item to user's backpack
+    let purchased_at = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    sqlx::query("INSERT INTO user_items (user_id, item_id, quantity, purchased_at) VALUES (?, ?, 1, ?) ON CONFLICT(user_id, item_id) DO UPDATE SET quantity = quantity + 1")
+        .bind(&user_id)
+        .bind(&item.id)
+        .bind(&purchased_at)
+        .execute(&data.db)
+        .await?;
+    
+    let newbal = userbal - item.price;
 
     interaction.create_response(&ctx.http, poise::serenity_prelude::CreateInteractionResponse::Message(
         poise::serenity_prelude::CreateInteractionResponseMessage::new()
@@ -1133,7 +1244,7 @@ pub async fn shop_back(
                 .title("Purchase Successful!")
                 .description(format!(
                     "You successfully purchased **{}**!\n\n**Cost:** {} points\n**New Balance:** {} points\n\nThank you for your purchase!",
-                    itemnm, item_price, newbal
+                    item.name, item.price, newbal
                 ))
                 .color(0x57F287)
                 .footer(CreateEmbedFooter::new("Bytes")
@@ -1141,5 +1252,182 @@ pub async fn shop_back(
             )
     )).await?;
     
+    Ok(())
+}
+
+// Handle for backpack command
+pub async fn backpack(
+    ctx: poise::Context<'_, Data, Error>,
+    user: Option<poise::serenity_prelude::User>,
+) -> Result<(), Error> {
+    let target_user = user.as_ref().unwrap_or(ctx.author());
+    ensure_user(&ctx).await?;
+    
+    let botav = ctx.cache().current_user().avatar_url().unwrap_or_default();
+    
+    // Get user's items with item details
+    let user_items_raw = sqlx::query(
+        "SELECT ui.item_id, ui.quantity, ui.purchased_at, si.name, si.description, si.price, si.tags 
+         FROM user_items ui 
+         JOIN shop_items si ON ui.item_id = si.id 
+         WHERE ui.user_id = ? 
+         ORDER BY ui.purchased_at DESC"
+    )
+    .bind(target_user.id.to_string())
+    .fetch_all(&ctx.data().db)
+    .await?;
+    
+    let user_items: Vec<(UserItem, ShopItem)> = user_items_raw.into_iter().map(|row| {
+        let user_item = UserItem {
+            item_id: row.get("item_id"),
+            quantity: row.get("quantity"),
+            purchased_at: row.get("purchased_at"),
+        };
+        let shop_item = ShopItem {
+            id: row.get("item_id"),
+            name: row.get("name"),
+            description: row.get("description"),
+            price: row.get("price"),
+            tags: serde_json::from_str(&row.get::<String, _>("tags")).unwrap_or_default(),
+        };
+        (user_item, shop_item)
+    }).collect();
+
+    if user_items.is_empty() {
+        let description = if target_user.id == ctx.author().id {
+            "Your backpack is empty! Visit the shop to buy some items."
+        } else {
+            "This user's backpack is empty."
+        };
+        
+        ctx.send(poise::CreateReply::default()
+            .embed(
+                CreateEmbed::new()
+                    .author(CreateEmbedAuthor::new(
+                        format!("{}'s Backpack", target_user.display_name())
+                    ).icon_url(target_user.avatar_url().unwrap_or_default()))
+                    .title("Empty Backpack")
+                    .description(description)
+                    .color(0x5865F2)
+                    .footer(CreateEmbedFooter::new("Bytes")
+                        .icon_url(botav))
+            )
+        ).await?;
+        return Ok(());
+    }
+
+    // Create fields for items
+    let mut fields = Vec::new();
+    
+    for (user_item, shop_item) in user_items.iter().take(25) {
+        let tags_display = if !shop_item.tags.is_empty() {
+            format!(" [{}]", shop_item.tags.join(", "))
+        } else {
+            String::new()
+        };
+        
+        let quantity_text = if user_item.quantity > 1 {
+            format!(" x{}", user_item.quantity)
+        } else {
+            String::new()
+        };
+        
+        fields.push((
+            format!("{}{}{}", shop_item.name, tags_display, quantity_text),
+            format!("*{}*\n**Value:** {} points", shop_item.description, shop_item.price),
+            true
+        ));
+    }
+    
+    let total_value: i64 = user_items.iter()
+        .map(|(user_item, shop_item)| shop_item.price * user_item.quantity as i64)
+        .sum();
+    
+    let backpack_description = format!(
+        "**Total Items:** {}\n**Total Value:** {} points",
+        user_items.iter().map(|(ui, _)| ui.quantity as i64).sum::<i64>(),
+        total_value
+    );
+
+    ctx.send(poise::CreateReply::default()
+        .embed(
+            CreateEmbed::new()
+                .author(CreateEmbedAuthor::new(
+                    format!("{}'s Backpack", target_user.display_name())
+                ).icon_url(target_user.avatar_url().unwrap_or_default()))
+                .title("Item Collection")
+                .description(&backpack_description)
+                .fields(fields)
+                .footer(CreateEmbedFooter::new("Bytes")
+                    .icon_url(botav))
+                .color(0x5865F2)
+                .thumbnail(target_user.avatar_url().unwrap_or_default())
+        )
+    ).await?;
+    
+    Ok(())
+}
+
+// Handle for additem command
+pub async fn additem(
+    ctx: poise::Context<'_, Data, Error>,
+    id: String,
+    name: String,
+    description: String,
+    price: i64,
+    tags: Option<String>,
+) -> Result<(), Error> {
+    if !crate::handlers::is_admin(&ctx).await {
+        let botav = ctx.cache().current_user().avatar_url().unwrap_or_default();
+        ctx.send(poise::CreateReply::default().embed(
+            CreateEmbed::new()
+                .author(serenity::all::CreateEmbedAuthor::new(ctx.author().name.clone())
+                    .icon_url(ctx.author().avatar_url().unwrap_or_default()))
+                .title("Add Item")
+                .description("Only admins can add items.")
+                .color(0xED4245)
+                .footer(serenity::all::CreateEmbedFooter::new("Bytes").icon_url(botav)),
+        )).await?;
+        return Ok(());
+    }
+
+    let tags_json = tags
+        .as_deref()
+        .map(|t| {
+            serde_json::to_string(
+                &t.split(',')
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect::<Vec<_>>(),
+            )
+            .unwrap_or_else(|_| "[]".to_string())
+        })
+        .unwrap_or_else(|| "[]".to_string());
+
+    sqlx::query("INSERT INTO shop_items (id, name, description, price, tags) VALUES (?, ?, ?, ?, ?)")
+        .bind(&id)
+        .bind(&name)
+        .bind(&description)
+        .bind(price)
+        .bind(tags_json)
+        .execute(&ctx.data().db)
+        .await?;
+
+    let botav = ctx.cache().current_user().avatar_url().unwrap_or_default();
+    ctx.send(
+        poise::CreateReply::default().embed(
+            CreateEmbed::new()
+                .author(serenity::all::CreateEmbedAuthor::new(ctx.author().name.clone())
+                    .icon_url(ctx.author().avatar_url().unwrap_or_default()))
+                .title("Item Added")
+                .description(format!("Successfully added **{}** to the shop!", name))
+                .field("Item ID", id, true)
+                .field("Price", format!("{} points", price), true)
+                .field("Tags", tags.unwrap_or_else(|| "None".to_string()), false)
+                .color(0x57F287)
+                .footer(serenity::all::CreateEmbedFooter::new("Bytes").icon_url(botav)),
+        ),
+    ).await?;
+
     Ok(())
 }

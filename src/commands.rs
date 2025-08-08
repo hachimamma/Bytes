@@ -275,3 +275,23 @@ pub async fn tax(
 pub async fn shop(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
     crate::handlers::shop(ctx).await
 }
+
+#[poise::command(slash_command)]
+pub async fn additem(
+    ctx: poise::Context<'_, Data, Error>,
+    #[description = "Unique ID for the item"] id: String,
+    #[description = "Name of the item"] name: String,
+    #[description = "Description of the item"] description: String,
+    #[description = "Price in points"] price: i64,
+    #[description = "Optional tags (comma separated, e.g. buy_once)"] tags: Option<String>,
+) -> Result<(), Error> {
+    crate::handlers::additem(ctx, id, name, description, price, tags).await
+}
+
+#[poise::command(slash_command)]
+pub async fn backpack(
+    ctx: poise::Context<'_, Data, Error>,
+    #[description = "User to check backpack for (optional)"] user: Option<poise::serenity_prelude::User>,
+) -> Result<(), Error> {
+    crate::handlers::backpack(ctx, user).await
+}

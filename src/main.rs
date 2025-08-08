@@ -202,7 +202,8 @@ async fn main() -> Result<(), Error> {
     let options = poise::FrameworkOptions {
         commands: vec![
             daily(), balance(), leaderboard(), rob(), coinflip(),
-            tax(), set(), pay(), monthly(), weekly(), add(), dice(), subtract(), yearly(), shop()
+            tax(), set(), pay(), monthly(), weekly(), add(), dice(), subtract(), yearly(), shop(), additem(),
+            backpack()
         ],
         ..Default::default()
     };
