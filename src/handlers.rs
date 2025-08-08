@@ -1042,7 +1042,7 @@ pub async fn shop(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
         .get("bits");
     
     // Get all available items from database
-    let items_raw = sqlx::query("SELECT id, name, description, price, tags FROM shop_items ORDER BY price ASC LIMIT 3")
+    let items_raw = sqlx::query("SELECT id, name, description, price, tags FROM shop_items ORDER BY price ASC LIMIT 5")
         .fetch_all(&ctx.data().db)
         .await?;
     
@@ -1096,7 +1096,7 @@ pub async fn shop(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
             true
         ));
 
-        if index < 3 {
+        if index < 5 {
             buttons.push(
                 CreateButton::new(format!("shop_buy_{}", item.id))
                     .label(format!("Buy {} ({})", item.name, item.price))
