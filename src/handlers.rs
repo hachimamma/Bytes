@@ -888,7 +888,7 @@ pub async fn monthly(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> 
                         .author(CreateEmbedAuthor::new(ctx.author().name.clone()).icon_url(ctx.author().avatar_url().unwrap_or_default()))
                         .title("Monthly Claim")
                         .description(format!("You already claimed your monthly reward!\n\n**Try again in {} days**", days_left))
-                        .footer(CreateEmbedFooter::new("Points").icon_url(botav))
+                        .footer(CreateEmbedFooter::new("bits").icon_url(botav))
                         .color(0x7289DA)
                 )).await?;
                 return Ok(());
@@ -915,11 +915,11 @@ pub async fn monthly(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> 
             .author(CreateEmbedAuthor::new(ctx.author().name.clone()).icon_url(ctx.author().avatar_url().unwrap_or_default()))
             .title("Monthly Reward Claimed")
             .description(format!(
-                "You claimed your monthly reward of **{} points**!\n\n**Balance**\n{} points", 
+                "You claimed your monthly reward of **{} bits**!\n\n**Balance**\n{} bits", 
                 reward,
                 newbal
             ))
-            .footer(CreateEmbedFooter::new("Points").icon_url(botav))
+            .footer(CreateEmbedFooter::new("bits").icon_url(botav))
             .color(0x7289DA)
     )).await?;
     
@@ -1017,19 +1017,18 @@ pub async fn yearly(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
 pub struct ShopItem {
     pub id: String,
     pub name: String,
-    pub description: String,
+    pub desc: String,
     pub price: i64,
-    pub tags: Vec<String>, // buy_once, badge, medal, trophy, legacy, etc.
+    pub tags: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserItem {
     pub item_id: String,
     pub quantity: i32,
-    pub purchased_at: String,
+    pub owned_at: String,
 }
 
-// Handle for shop command
 pub async fn shop(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
     ensure_user(&ctx).await?;
     
@@ -1041,7 +1040,6 @@ pub async fn shop(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
         .await?
         .get("bits");
     
-    // Get all available items from database
     let items_raw = sqlx::query("SELECT id, name, description, price, tags FROM shop_items ORDER BY price ASC LIMIT 5")
         .fetch_all(&ctx.data().db)
         .await?;
@@ -1049,7 +1047,7 @@ pub async fn shop(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
     let items: Vec<ShopItem> = items_raw.into_iter().map(|row| ShopItem {
         id: row.get("id"),
         name: row.get("name"),
-        description: row.get("description"),
+        desc: row.get("description"),
         price: row.get("price"),
         tags: serde_json::from_str(&row.get::<String, _>("tags")).unwrap_or_default(),
     }).collect();
@@ -1066,17 +1064,15 @@ pub async fn shop(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
         return Ok(());
     }
     
-    let shop_description = format!(
-        "**Your Balance:** {} points\n\n**Available Items:**",
+    let shop_desc = format!(
+        "**Your Balance:** {} bits\n\n**Available Items:**",
         userbal
     );
     
-    // Create fields dynamically from database items
     let mut fields = Vec::new();
     let mut buttons = Vec::new();
     
     for (index, item) in items.iter().enumerate() {
-        // Create tag badges
         let tags_display = if !item.tags.is_empty() {
             let mut tags_pretty = Vec::new();
             for tag in &item.tags {
@@ -1092,7 +1088,7 @@ pub async fn shop(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
 
         fields.push((
             format!("{}", item.name),
-            format!("**Price:** {} points\n*{}*{}", item.price, item.description, tags_display),
+            format!("**Price:** {} bits\n*{}*{}", item.price, item.desc, tags_display),
             true
         ));
 
@@ -1113,8 +1109,8 @@ pub async fn shop(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
                 .author(CreateEmbedAuthor::new(
                     format!("{}'s Shop", ctx.author().display_name())
                 ).icon_url(ctx.author().avatar_url().unwrap_or_default()))
-                .title("Points Shop")
-                .description(&shop_description)
+                .title("Bytes Shop")
+                .description(&shop_desc)
                 .fields(fields)
                 .footer(CreateEmbedFooter::new("Click the buttons below to purchase items")
                     .icon_url(botav))
@@ -1127,7 +1123,7 @@ pub async fn shop(ctx: poise::Context<'_, Data, Error>) -> Result<(), Error> {
     Ok(())
 }
 
-// Handle for shop backend
+//private sec for shop
 pub async fn shop_back(
     ctx: &poise::serenity_prelude::Context,
     interaction: &poise::serenity_prelude::ComponentInteraction,
@@ -1136,7 +1132,6 @@ pub async fn shop_back(
 ) -> Result<(), Error> {
     let user_id = interaction.user.id.to_string();
     
-    // Get item from database
     let item_row = sqlx::query("SELECT id, name, description, price, tags FROM shop_items WHERE id = ?")
         .bind(item_id)
         .fetch_optional(&data.db)
@@ -1146,11 +1141,11 @@ pub async fn shop_back(
         Some(row) => ShopItem {
             id: row.get("id"),
             name: row.get("name"),
-            description: row.get("description"),
+            desc: row.get("description"),
             price: row.get("price"),
             tags: serde_json::from_str(&row.get::<String, _>("tags")).unwrap_or_default(),
         },
-        None => return Ok(()), // Item doesn't exist
+        None => return Ok(()),
     };
     
     let userbal: i64 = sqlx::query("SELECT bits FROM users WHERE id = ?")
@@ -1164,16 +1159,15 @@ pub async fn shop_back(
         .and_then(|cache| cache.current_user().avatar_url())
         .unwrap_or_default();
 
-    // Check if item has buy_once tag and user already owns it
     if item.tags.contains(&"buy_once".to_string()) {
-        let already_owned: i64 = sqlx::query("SELECT COUNT(*) as count FROM user_items WHERE user_id = ? AND item_id = ?")
+        let owned: i64 = sqlx::query("SELECT COUNT(*) as count FROM user_it WHERE user_id = ? AND item_id = ?")
             .bind(&user_id)
             .bind(&item.id)
             .fetch_one(&data.db)
             .await?
             .get("count");
         
-        if already_owned > 0 {
+        if owned > 0 {
             interaction.create_response(&ctx.http, poise::serenity_prelude::CreateInteractionResponse::Message(
                 poise::serenity_prelude::CreateInteractionResponseMessage::new()
                     .embed(CreateEmbed::new()
@@ -1203,9 +1197,9 @@ pub async fn shop_back(
                     .author(CreateEmbedAuthor::new(
                         interaction.user.display_name().to_string()
                     ).icon_url(interaction.user.avatar_url().unwrap_or_default()))
-                    .title("Insufficient Points")
+                    .title("Insufficient bits")
                     .description(format!(
-                        "You don't have enough points to buy **{}**!\n\n**Required:** {} points\n**You have:** {} points\n**Need:** {} more points",
+                        "You don't have enough bits to buy **{}**!\n\n**Required:** {} bits\n**You have:** {} bits\n**Need:** {} more bits",
                         item.name, item.price, userbal, need
                     ))
                     .color(0xED4245)
@@ -1217,19 +1211,17 @@ pub async fn shop_back(
         return Ok(());
     }
     
-    // Deduct points
     sqlx::query("UPDATE users SET bits = bits - ? WHERE id = ?")
         .bind(item.price)
         .bind(&user_id)
         .execute(&data.db)
         .await?;
     
-    // Add item to user's backpack
-    let purchased_at = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
-    sqlx::query("INSERT INTO user_items (user_id, item_id, quantity, purchased_at) VALUES (?, ?, 1, ?) ON CONFLICT(user_id, item_id) DO UPDATE SET quantity = quantity + 1")
+    let owned_at = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    sqlx::query("INSERT INTO user_it (user_id, item_id, quantity, owned_at) VALUES (?, ?, 1, ?) ON CONFLICT(user_id, item_id) DO UPDATE SET quantity = quantity + 1")
         .bind(&user_id)
         .bind(&item.id)
-        .bind(&purchased_at)
+        .bind(&owned_at)
         .execute(&data.db)
         .await?;
     
@@ -1243,7 +1235,7 @@ pub async fn shop_back(
                 ).icon_url(interaction.user.avatar_url().unwrap_or_default()))
                 .title("Purchase Successful!")
                 .description(format!(
-                    "You successfully purchased **{}**!\n\n**Cost:** {} points\n**New Balance:** {} points\n\nThank you for your purchase!",
+                    "You successfully purchased **{}**!\n\n**Cost:** {} bits\n**New Balance:** {} bits\n\nThank you for your purchase!",
                     item.name, item.price, newbal
                 ))
                 .color(0x57F287)
@@ -1255,46 +1247,45 @@ pub async fn shop_back(
     Ok(())
 }
 
-// Handle for backpack command
+// handle for backpack
 pub async fn backpack(
     ctx: poise::Context<'_, Data, Error>,
     user: Option<poise::serenity_prelude::User>,
 ) -> Result<(), Error> {
-    let target_user = user.as_ref().unwrap_or(ctx.author());
+    let target = user.as_ref().unwrap_or(ctx.author());
     ensure_user(&ctx).await?;
     
     let botav = ctx.cache().current_user().avatar_url().unwrap_or_default();
     
-    // Get user's items with item details
-    let user_items_raw = sqlx::query(
-        "SELECT ui.item_id, ui.quantity, ui.purchased_at, si.name, si.description, si.price, si.tags 
-         FROM user_items ui 
+    let userit_raw = sqlx::query(
+        "SELECT ui.item_id, ui.quantity, ui.owned_at, si.name, si.description, si.price, si.tags 
+         FROM user_it ui 
          JOIN shop_items si ON ui.item_id = si.id 
          WHERE ui.user_id = ? 
-         ORDER BY ui.purchased_at DESC"
+         ORDER BY ui.owned_at DESC"
     )
-    .bind(target_user.id.to_string())
+    .bind(target.id.to_string())
     .fetch_all(&ctx.data().db)
     .await?;
     
-    let user_items: Vec<(UserItem, ShopItem)> = user_items_raw.into_iter().map(|row| {
+    let user_it: Vec<(UserItem, ShopItem)> = userit_raw.into_iter().map(|row| {
         let user_item = UserItem {
             item_id: row.get("item_id"),
             quantity: row.get("quantity"),
-            purchased_at: row.get("purchased_at"),
+            owned_at: row.get("owned_at"),
         };
         let shop_item = ShopItem {
             id: row.get("item_id"),
             name: row.get("name"),
-            description: row.get("description"),
+            desc: row.get("description"),
             price: row.get("price"),
             tags: serde_json::from_str(&row.get::<String, _>("tags")).unwrap_or_default(),
         };
         (user_item, shop_item)
     }).collect();
 
-    if user_items.is_empty() {
-        let description = if target_user.id == ctx.author().id {
+    if user_it.is_empty() {
+        let description = if target.id == ctx.author().id {
             "Your backpack is empty! Visit the shop to buy some items."
         } else {
             "This user's backpack is empty."
@@ -1304,8 +1295,8 @@ pub async fn backpack(
             .embed(
                 CreateEmbed::new()
                     .author(CreateEmbedAuthor::new(
-                        format!("{}'s Backpack", target_user.display_name())
-                    ).icon_url(target_user.avatar_url().unwrap_or_default()))
+                        format!("{}'s Backpack", target.display_name())
+                    ).icon_url(target.avatar_url().unwrap_or_default()))
                     .title("Empty Backpack")
                     .description(description)
                     .color(0x5865F2)
@@ -1316,10 +1307,9 @@ pub async fn backpack(
         return Ok(());
     }
 
-    // Create fields for items
     let mut fields = Vec::new();
     
-    for (user_item, shop_item) in user_items.iter().take(25) {
+    for (user_item, shop_item) in user_it.iter().take(25) {
         let tags_display = if !shop_item.tags.is_empty() {
             format!(" [{}]", shop_item.tags.join(", "))
         } else {
@@ -1334,41 +1324,41 @@ pub async fn backpack(
         
         fields.push((
             format!("{}{}{}", shop_item.name, tags_display, quantity_text),
-            format!("*{}*\n**Value:** {} points", shop_item.description, shop_item.price),
+            format!("*{}*\n**Value:** {} bits", shop_item.desc, shop_item.price),
             true
         ));
     }
     
-    let total_value: i64 = user_items.iter()
+    let tt_val: i64 = user_it.iter()
         .map(|(user_item, shop_item)| shop_item.price * user_item.quantity as i64)
         .sum();
     
-    let backpack_description = format!(
-        "**Total Items:** {}\n**Total Value:** {} points",
-        user_items.iter().map(|(ui, _)| ui.quantity as i64).sum::<i64>(),
-        total_value
+    let bp_desc = format!(
+        "**Total Items:** {}\n**Total Value:** {} bits",
+        user_it.iter().map(|(ui, _)| ui.quantity as i64).sum::<i64>(),
+        tt_val
     );
 
     ctx.send(poise::CreateReply::default()
         .embed(
             CreateEmbed::new()
                 .author(CreateEmbedAuthor::new(
-                    format!("{}'s Backpack", target_user.display_name())
-                ).icon_url(target_user.avatar_url().unwrap_or_default()))
+                    format!("{}'s Backpack", target.display_name())
+                ).icon_url(target.avatar_url().unwrap_or_default()))
                 .title("Item Collection")
-                .description(&backpack_description)
+                .description(&bp_desc)
                 .fields(fields)
                 .footer(CreateEmbedFooter::new("Bytes")
                     .icon_url(botav))
                 .color(0x5865F2)
-                .thumbnail(target_user.avatar_url().unwrap_or_default())
+                .thumbnail(target.avatar_url().unwrap_or_default())
         )
     ).await?;
     
     Ok(())
 }
 
-// Handle for additem command
+//handle for additem 
 pub async fn additem(
     ctx: poise::Context<'_, Data, Error>,
     id: String,
@@ -1391,7 +1381,7 @@ pub async fn additem(
         return Ok(());
     }
 
-    let tags_json = tags
+    let json_tags = tags
         .as_deref()
         .map(|t| {
             serde_json::to_string(
@@ -1409,7 +1399,7 @@ pub async fn additem(
         .bind(&name)
         .bind(&description)
         .bind(price)
-        .bind(tags_json)
+        .bind(json_tags)
         .execute(&ctx.data().db)
         .await?;
 
@@ -1422,7 +1412,7 @@ pub async fn additem(
                 .title("Item Added")
                 .description(format!("Successfully added **{}** to the shop!", name))
                 .field("Item ID", id, true)
-                .field("Price", format!("{} points", price), true)
+                .field("Price", format!("{} bits", price), true)
                 .field("Tags", tags.unwrap_or_else(|| "None".to_string()), false)
                 .color(0x57F287)
                 .footer(serenity::all::CreateEmbedFooter::new("Bytes").icon_url(botav)),
