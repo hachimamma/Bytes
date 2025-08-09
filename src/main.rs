@@ -7,6 +7,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use chrono::{DateTime, Utc, Duration};
+use warp::Filter;
+use tokio::task;
 
 mod commands;
 mod handlers;
@@ -156,30 +158,43 @@ pub type Error = Box<dyn std::error::Error + Send + Sync>;
 #[tokio::main]
 async fn main() -> Result<(), Error> {
     dotenv().ok();
-    
+
+    // Start tiny webserver on background task for uptime pings
+    let port: u16 = env::var("PORT")
+        .unwrap_or_else(|_| "8080".to_string())
+        .parse()
+        .expect("PORT must be a number");
+
+    let routes = warp::any().map(|| "Bot is alive");
+    task::spawn(async move {
+        warp::serve(routes).run(([0, 0, 0, 0], port)).await;
+    });
+
+    // *** Your original bot setup code starts here ***
+
     let token = env::var("DISCORD_TOKEN")?;
-    
-    // Get the project root directory
+
+    // ... rest of your original setup code remains unchanged ...
+
     let current_dir = std::env::current_dir()?;
     let project_root = if current_dir.ends_with("shop") {
         current_dir.parent().unwrap().to_path_buf()
     } else {
         current_dir
     };
-    
-    // Set working directory to project root
+
     std::env::set_current_dir(&project_root)?;
-    
+
     let db_url = env::var("DB_URL").unwrap_or("sqlite:bytes.db".into());
-    
+
     println!("database URL: {}", &db_url);
     println!("current directory: {:?}", std::env::current_dir());
     println!("project root: {:?}", &project_root);
-    
+
     let db = SqlitePoolOptions::new()
         .connect(&db_url)
         .await?;
-    
+
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS users (
             id TEXT PRIMARY KEY,
@@ -193,12 +208,12 @@ async fn main() -> Result<(), Error> {
     )
     .execute(&db)
     .await?;
-    
+
     let act_t = Arc::new(Mutex::new(HashMap::new()));
     let actt_h = Arc::clone(&act_t);
     let actt_f = Arc::clone(&act_t);
     let dbf_f = db.clone();
-    
+
     let options = poise::FrameworkOptions {
         commands: vec![
             daily(), balance(), leaderboard(), rob(), coinflip(),
@@ -207,7 +222,7 @@ async fn main() -> Result<(), Error> {
         ],
         ..Default::default()
     };
-    
+
     let framework = poise::Framework::builder()
         .options(options)
         .setup(move |ctx, _ready, framework| {
@@ -221,14 +236,14 @@ async fn main() -> Result<(), Error> {
             })
         })
         .build();
-    
+
     let handler = Handler {
         data: Arc::new(Data {
             db,
-            act_t: actt_h,  
+            act_t: actt_h,
         }),
     };
-    
+
     let mut client = serenity::ClientBuilder::new(
         token,
         serenity::GatewayIntents::non_privileged() | serenity::GatewayIntents::MESSAGE_CONTENT
@@ -236,10 +251,12 @@ async fn main() -> Result<(), Error> {
     .framework(framework)
     .event_handler(handler)
     .await?;
-    
+
     println!("bot starting with improved activity rwd system!");
     println!("rwd system: pls read the code");
+
+    // This blocks forever, running the Discord bot
     client.start().await?;
-    
+
     Ok(())
 }
