@@ -157,29 +157,36 @@ pub type Error = Box<dyn std::error::Error + Send + Sync>;
 #[tokio::main]
 async fn main() -> Result<(), Error> {
     dotenv().ok();
-    
+
     let token = env::var("DISCORD_TOKEN")?;
-    
-    // Prepare DB path
+
+    // Default to local db path
     let mut db_path = "bytes.db".to_string();
+
+    // Check Railway environment and copy DB if needed
     let source_path = Path::new("/app/bytes.db");
     let tmp_path = Path::new("/tmp/bytes.db");
 
-    // If running in Railway and source exists, copy to /tmp
     if source_path.exists() {
-        fs::copy(source_path, tmp_path)?;
+        // Copy only if it hasn't been copied already
+        if !tmp_path.exists() {
+            if let Err(e) = fs::copy(source_path, tmp_path) {
+                eprintln!("Failed to copy DB to tmp: {}", e);
+            }
+        }
         db_path = "/tmp/bytes.db".to_string();
     }
 
+    // Final DB URL
     let db_url = env::var("DB_URL").unwrap_or_else(|_| format!("sqlite:{}", db_path));
-    
-    println!("database URL: {}", &db_url);
-    println!("current directory: {:?}", std::env::current_dir());
-    
+
+    println!("Database URL: {}", &db_url);
+    println!("Current directory: {:?}", std::env::current_dir());
+
     let db = SqlitePoolOptions::new()
         .connect(&db_url)
         .await?;
-    
+
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS users (
             id TEXT PRIMARY KEY,
@@ -193,12 +200,12 @@ async fn main() -> Result<(), Error> {
     )
     .execute(&db)
     .await?;
-    
+
     let act_t = Arc::new(Mutex::new(HashMap::new()));
     let actt_h = Arc::clone(&act_t);
     let actt_f = Arc::clone(&act_t);
     let dbf_f = db.clone();
-    
+
     let options = poise::FrameworkOptions {
         commands: vec![
             daily(), balance(), leaderboard(), rob(), coinflip(),
@@ -207,7 +214,7 @@ async fn main() -> Result<(), Error> {
         ],
         ..Default::default()
     };
-    
+
     let framework = poise::Framework::builder()
         .options(options)
         .setup(move |ctx, _ready, framework| {
@@ -221,14 +228,14 @@ async fn main() -> Result<(), Error> {
             })
         })
         .build();
-    
+
     let handler = Handler {
         data: Arc::new(Data {
             db,
             act_t: actt_h,
         }),
     };
-    
+
     let mut client = serenity::ClientBuilder::new(
         token,
         serenity::GatewayIntents::non_privileged() | serenity::GatewayIntents::MESSAGE_CONTENT
@@ -236,9 +243,9 @@ async fn main() -> Result<(), Error> {
     .framework(framework)
     .event_handler(handler)
     .await?;
-    
-    println!("bot starting with improved activity rwd system!");
+
+    println!("Bot starting with improved activity reward system!");
     client.start().await?;
-    
+
     Ok(())
 }
