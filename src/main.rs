@@ -7,6 +7,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use chrono::{DateTime, Utc, Duration};
+use std::fs;
+use std::path::Path;
 
 mod commands;
 mod handlers;
@@ -89,7 +91,6 @@ impl EventHandler for Handler {
         drop(tracker);
     }
 
-    // Add interaction handler for shop buttons
     async fn interaction_create(&self, ctx: Context, interaction: serenity::Interaction) {
         if let serenity::Interaction::Component(component_interaction) = interaction {
             if component_interaction.data.custom_id.starts_with("shop_buy_") {
@@ -159,22 +160,21 @@ async fn main() -> Result<(), Error> {
     
     let token = env::var("DISCORD_TOKEN")?;
     
-    // Get the project root directory
-    let current_dir = std::env::current_dir()?;
-    let project_root = if current_dir.ends_with("shop") {
-        current_dir.parent().unwrap().to_path_buf()
-    } else {
-        current_dir
-    };
-    
-    // Set working directory to project root
-    std::env::set_current_dir(&project_root)?;
-    
-    let db_url = env::var("DB_URL").unwrap_or("sqlite:bytes.db".into());
+    // Prepare DB path
+    let mut db_path = "bytes.db".to_string();
+    let source_path = Path::new("/app/bytes.db");
+    let tmp_path = Path::new("/tmp/bytes.db");
+
+    // If running in Railway and source exists, copy to /tmp
+    if source_path.exists() {
+        fs::copy(source_path, tmp_path)?;
+        db_path = "/tmp/bytes.db".to_string();
+    }
+
+    let db_url = env::var("DB_URL").unwrap_or_else(|_| format!("sqlite:{}", db_path));
     
     println!("database URL: {}", &db_url);
     println!("current directory: {:?}", std::env::current_dir());
-    println!("project root: {:?}", &project_root);
     
     let db = SqlitePoolOptions::new()
         .connect(&db_url)
@@ -238,7 +238,6 @@ async fn main() -> Result<(), Error> {
     .await?;
     
     println!("bot starting with improved activity rwd system!");
-    println!("rwd system: pls read the code");
     client.start().await?;
     
     Ok(())
